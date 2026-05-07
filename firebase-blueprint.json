@@ -1,0 +1,52 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "App user (Student or Warden)",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "role": { "enum": ["student", "warden"] },
+        "name": { "type": "string" }
+      },
+      "required": ["userId", "role"]
+    },
+    "Report": {
+      "title": "Incident Report",
+      "description": "Reported incident with evidence",
+      "type": "object",
+      "properties": {
+        "reporterId": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "voiceUrl": { "type": "string" },
+        "videoUrl": { "type": "string" },
+        "status": { "enum": ["pending", "reviewed"] },
+        "description": { "type": "string" }
+      },
+      "required": ["reporterId", "timestamp", "status"]
+    },
+    "CCTVState": {
+      "title": "CCTV Control",
+      "description": "Global state of CCTV surveillance (Warden controlled)",
+      "type": "object",
+      "properties": {
+        "active": { "type": "boolean" },
+        "updatedBy": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/reports/{reportId}": {
+      "schema": "Report",
+      "description": "Collection of all incident reports"
+    },
+    "/system/cctv": {
+      "schema": "CCTVState",
+      "description": "Global settings for CCTV"
+    }
+  }
+}
