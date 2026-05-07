@@ -2,9 +2,9 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Shield, Radio, Activity, Camera, Mic, Info, CheckCircle2, AlertCircle, LogOut, CreditCard } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { User, UserRole, Report } from '../types';
+import { io } from 'socket.io-client';
 
-// Mock DB Utility
-const STORAGE_KEY = 'smartedusafe_data';
+const socket = io();
 
 export const useSmartEduSafe = () => {
   const [user, setUser] = useState<User | null>(() => {
@@ -12,23 +12,39 @@ export const useSmartEduSafe = () => {
     return saved ? JSON.parse(saved) : null;
   });
 
-  const [reports, setReports] = useState<Report[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY + '_reports');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [isCctvActive, setIsCctvActive] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEY + '_cctv');
-    return saved === 'true';
-  });
+  const [reports, setReports] = useState<Report[]>([]);
+  const [isCctvActive, setIsCctvActive] = useState(false);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY + '_reports', JSON.stringify(reports));
-  }, [reports]);
+    socket.on('init', (data) => {
+      setReports(data.reports);
+      setIsCctvActive(data.isCctvActive);
+    });
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY + '_cctv', isCctvActive.toString());
-  }, [isCctvActive]);
+    socket.on('report_added', (report) => {
+      setReports(prev => [report, ...prev]);
+    });
+
+    socket.on('reports_updated', (updatedReports) => {
+      setReports(updatedReports);
+    });
+
+    socket.on('cctv_toggled', (active) => {
+      setIsCctvActive(active);
+    });
+
+    socket.on('reports_cleared', () => {
+      setReports([]);
+    });
+
+    return () => {
+      socket.off('init');
+      socket.off('report_added');
+      socket.off('reports_updated');
+      socket.off('cctv_toggled');
+      socket.off('reports_cleared');
+    };
+  }, []);
 
   const login = (id: string, role: UserRole) => {
     const name = role === 'warden' 
@@ -51,17 +67,19 @@ export const useSmartEduSafe = () => {
       timestamp: Date.now(),
       status: 'pending'
     };
-    setReports(prev => [newReport, ...prev]);
+    socket.emit('add_report', newReport);
   };
 
   const markAsReviewed = (id: string) => {
-    setReports(prev => prev.map(r => r.id === id ? { ...r, status: 'reviewed' } : r));
+    socket.emit('mark_reviewed', id);
   };
 
-  const toggleCctv = () => setIsCctvActive(prev => !prev);
+  const toggleCctv = () => {
+    socket.emit('toggle_cctv');
+  };
 
   const clearReports = () => {
-    setReports([]);
+    socket.emit('clear_reports');
   };
 
   return { user, reports, isCctvActive, login, logout, addReport, markAsReviewed, toggleCctv, clearReports };
