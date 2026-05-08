@@ -39,6 +39,8 @@ async function startServer() {
       origin: "*",
       methods: ["GET", "POST"]
     },
+    transports: ['polling', 'websocket'],
+    allowEIO3: true,
     maxHttpBufferSize: 1e8, // 100MB for large base64 audio payloads
     pingTimeout: 120000,
     pingInterval: 30000
@@ -59,6 +61,26 @@ async function startServer() {
       socketConnected: io.sockets.sockets.size,
       uptime: process.uptime()
     });
+  });
+
+  // Polling Fallback Endpoints
+  app.get('/api/reports', (req, res) => {
+    console.log(`[API] GET /api/reports - Count: ${reports.length}`);
+    res.json(reports);
+  });
+
+  app.get('/api/cctv', (req, res) => {
+    console.log(`[API] GET /api/cctv - State: ${isCctvActive}`);
+    res.json({ isCctvActive });
+  });
+
+  app.post('/api/reports', (req, res) => {
+    const report = req.body;
+    console.log(`[API] POST /api/reports - ID: ${report?.id}`);
+    reports = [report, ...reports];
+    saveState();
+    io.emit('report_added', report);
+    res.status(201).json(report);
   });
 
   // Socket.io logic

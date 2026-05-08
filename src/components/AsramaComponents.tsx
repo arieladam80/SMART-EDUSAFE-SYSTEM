@@ -12,8 +12,39 @@ export const useSmartEduSafe = () => {
 
   const [reports, setReports] = useState<Report[]>([]);
   const [isCctvActive, setIsCctvActive] = useState(false);
+  const [isConnected, setIsConnected] = useState(socket.connected);
+
+  // Sync state helpers
+  const syncState = async () => {
+    try {
+      const reportsRes = await fetch('/api/reports').catch(() => null);
+      const cctvRes = await fetch('/api/cctv').catch(() => null);
+
+      if (reportsRes && reportsRes.ok) {
+        const data = await reportsRes.json();
+        setReports(data);
+      } else if (reportsRes) {
+        console.warn(`Reports sync failed with status: ${reportsRes.status}`);
+      }
+
+      if (cctvRes && cctvRes.ok) {
+        const data = await cctvRes.json();
+        setIsCctvActive(data.isCctvActive);
+      } else if (cctvRes) {
+        console.warn(`CCTV sync failed with status: ${cctvRes.status}`);
+      }
+    } catch (err) {
+      console.error('State sync critical failure:', err);
+    }
+  };
 
   useEffect(() => {
+    // Initial fetch
+    syncState();
+
+    socket.on('connect', () => setIsConnected(true));
+    socket.on('disconnect', () => setIsConnected(false));
+    
     socket.on('init', (data) => {
       setReports(data.reports);
       setIsCctvActive(data.isCctvActive);
@@ -35,12 +66,22 @@ export const useSmartEduSafe = () => {
       setReports([]);
     });
 
+    // Polling fallback every 10s if not connected via socket
+    const pollInterval = setInterval(() => {
+      if (!socket.connected) {
+        syncState();
+      }
+    }, 10000);
+
     return () => {
+      socket.off('connect');
+      socket.off('disconnect');
       socket.off('init');
       socket.off('report_added');
       socket.off('reports_updated');
       socket.off('cctv_toggled');
       socket.off('reports_cleared');
+      clearInterval(pollInterval);
     };
   }, []);
 
@@ -58,19 +99,32 @@ export const useSmartEduSafe = () => {
     localStorage.removeItem('smartedusafe_user');
   };
 
-  const addReport = (report: Omit<Report, 'id' | 'timestamp' | 'status'>) => {
+  const addReport = async (report: Omit<Report, 'id' | 'timestamp' | 'status'>) => {
     const newReport: Report = {
       ...report,
       id: `EMG-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
       timestamp: Date.now(),
       status: 'pending'
     };
-    console.log('--- EMITTING REPORT TO SYSTEM ---', newReport.id);
+    
+    // Always emit via socket for instant update if connected
     socket.emit('add_report', newReport);
+
+    // Fallback POST for serverless environments
+    try {
+      await fetch('/api/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newReport)
+      });
+    } catch (e) {
+      console.warn('POST fallback failed, relying on socket');
+    }
   };
 
-  const markAsReviewed = (id: string) => {
+  const markAsReviewed = async (id: string) => {
     socket.emit('mark_reviewed', id);
+    // Add API support later if needed, current socket.emit works in persistent environments
   };
 
   const toggleCctv = () => {

@@ -12,23 +12,31 @@ interface StudentProps {
 
 export const StudentDashboard = ({ user, onReport, reports }: StudentProps) => {
   const [isConnected, setIsConnected] = useState(socket.connected);
+  const [lastError, setLastError] = useState<string | null>(null);
 
   useEffect(() => {
     setIsConnected(socket.connected);
 
-    function onConnect() { setIsConnected(true); }
+    function onConnect() { 
+      setIsConnected(true); 
+      setLastError(null);
+    }
     function onDisconnect() { setIsConnected(false); }
+    function onError(err: any) { 
+      setIsConnected(false);
+      setLastError(err.message || String(err));
+    }
 
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
-    socket.on('connect_error', () => setIsConnected(false));
+    socket.on('connect_error', onError);
 
     if (!socket.connected) socket.connect();
 
     return () => {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
-      socket.off('connect_error');
+      socket.off('connect_error', onError);
     };
   }, []);
 
@@ -114,15 +122,20 @@ export const StudentDashboard = ({ user, onReport, reports }: StudentProps) => {
           <h2 className="text-xl md:text-2xl font-display">Student Control</h2>
           <p className="text-slate-500 font-mono text-[10px] md:text-xs">ID: {user.id}</p>
         </div>
-        <div className={`px-3 py-1.5 md:px-4 md:py-2 rounded-full font-medium flex items-center gap-2 text-xs md:text-sm transition-colors ${isConnected ? 'bg-blue-50 text-blue-600' : 'bg-red-50 text-red-600'}`}>
+        <div className={`px-3 py-1.5 md:px-4 md:py-2 rounded-full font-medium flex items-center gap-2 text-xs md:text-sm transition-colors ${isConnected ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'}`}>
           <Shield className={`w-3.5 h-3.5 md:w-4 h-4 ${!isConnected ? 'animate-pulse' : ''}`} />
-          <span>{isConnected ? 'System Connected' : 'Signal Lost'}</span>
+          <div className="flex flex-col items-start leading-none">
+            <span className="font-bold">{isConnected ? 'System Connected' : 'Sync Active'}</span>
+            {!isConnected && (
+              <span className="text-[8px] opacity-70">Polling updates every 10s</span>
+            )}
+          </div>
           {!isConnected && (
             <button 
               onClick={() => socket.connect()}
-              className="ml-2 bg-red-600 text-white px-2 py-0.5 rounded text-[10px] font-bold"
+              className="ml-2 bg-amber-600 text-white px-2 py-0.5 rounded text-[10px] font-bold hover:bg-amber-700 transition-colors"
             >
-              Retry
+              Retry Core
             </button>
           )}
         </div>

@@ -125,23 +125,31 @@ export const WardenDashboard = ({ user, reports, onMarkReviewed, onClearReports,
   const sortedReports = [...reports].sort((a, b) => b.timestamp - a.timestamp);
 
   const [isConnected, setIsConnected] = useState(socket.connected);
+  const [lastError, setLastError] = useState<string | null>(null);
 
   useEffect(() => {
     setIsConnected(socket.connected);
 
-    function onConnect() { setIsConnected(true); }
+    function onConnect() { 
+      setIsConnected(true); 
+      setLastError(null);
+    }
     function onDisconnect() { setIsConnected(false); }
+    function onError(err: any) { 
+      setIsConnected(false);
+      setLastError(err.message || String(err));
+    }
 
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
-    socket.on('connect_error', () => setIsConnected(false));
+    socket.on('connect_error', onError);
 
     if (!socket.connected) socket.connect();
 
     return () => {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
-      socket.off('connect_error');
+      socket.off('connect_error', onError);
     };
   }, []);
 
@@ -324,16 +332,21 @@ export const WardenDashboard = ({ user, reports, onMarkReviewed, onClearReports,
         <header className="hidden md:flex h-16 border-b border-white/5 items-center justify-between px-8 bg-[#1a1b1e]">
             <div className="flex items-center gap-8">
               <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-blue-500 shadow-[0_0_8px_#3b82f6]' : 'bg-red-500 animate-pulse'}`} />
-                <span className="text-xs font-mono font-bold tracking-tighter uppercase whitespace-nowrap">
-                  Signal: {isConnected ? 'Stable' : 'Lost'}
-                </span>
+                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-blue-500 shadow-[0_0_8px_#3b82f6]' : 'bg-amber-500 shadow-[0_0_8px_#f59e0b]'}`} />
+                <div className="flex flex-col">
+                  <span className="text-xs font-mono font-bold tracking-tighter uppercase whitespace-nowrap">
+                    Signal: {isConnected ? 'Stable' : 'Sync Active'}
+                  </span>
+                  {!isConnected && (
+                    <span className="text-[8px] font-mono opacity-50 uppercase tracking-tighter">Hybrid Polling</span>
+                  )}
+                </div>
                 {!isConnected && (
                   <button 
                     onClick={() => socket.connect()}
                     className="text-[9px] bg-white/5 hover:bg-white/10 px-2 py-0.5 rounded border border-white/10 transition-colors"
                   >
-                    Reconnect
+                    Resync Core
                   </button>
                 )}
               </div>
