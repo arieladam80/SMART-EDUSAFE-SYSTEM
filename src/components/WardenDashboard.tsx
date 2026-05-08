@@ -161,6 +161,27 @@ export const WardenDashboard = ({ user, reports, onMarkReviewed, onClearReports,
 
   return (
     <div className="min-h-screen bg-[#151619] text-white flex flex-col md:flex-row">
+      {/* Alert Ticker - Global Scrolling Feed */}
+      {pendingReports.length > 0 && (
+        <div className="fixed top-[64px] md:top-0 md:left-72 right-0 h-8 bg-red-600/90 backdrop-blur-sm z-30 flex items-center overflow-hidden border-b border-red-500/30">
+          <div className="flex whitespace-nowrap animate-[marquee_20s_linear_infinity]">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="flex items-center gap-8 px-4">
+                {pendingReports.map((report) => (
+                  <div key={report.id} className="flex items-center gap-2 text-[10px] font-mono font-bold uppercase tracking-wider">
+                    <AlertCircle className="w-3 h-3 animate-pulse" />
+                    <span>EMERGENCY SIGNAL FROM {report.dorm}</span>
+                    <span className="text-white/40">-</span>
+                    <span>STUDENT {report.reporterId}</span>
+                    <span className="ml-4 w-1 h-1 rounded-full bg-white/30" />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Mobile Header */}
       <header className="md:hidden h-16 border-b border-white/5 flex items-center justify-between px-4 bg-[#1a1b1e] sticky top-0 z-40">
         <div className="flex items-center gap-2">
@@ -301,7 +322,7 @@ export const WardenDashboard = ({ user, reports, onMarkReviewed, onClearReports,
         </header>
 
         {/* Dashboard Area */}
-        <div className="flex-1 overflow-hidden">
+        <div className={`flex-1 overflow-hidden transition-all duration-300 ${pendingReports.length > 0 ? 'pt-8' : ''}`}>
           {/* Surveillance Feed */}
           <section className="h-full p-4 md:p-8 overflow-y-auto space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
@@ -456,17 +477,33 @@ export const WardenDashboard = ({ user, reports, onMarkReviewed, onClearReports,
                     <motion.button
                       layoutId={`alert-${report.id}`}
                       key={report.id}
+                      animate={report.status === 'pending' ? { 
+                        boxShadow: [
+                          '0 0 0px rgba(239, 68, 68, 0)',
+                          '0 0 15px rgba(239, 68, 68, 0.3)',
+                          '0 0 0px rgba(239, 68, 68, 0)'
+                        ]
+                      } : {}}
+                      transition={{ duration: 2, repeat: Infinity }}
                       onClick={() => {
                         setSelectedReport(report);
                         setIsAlertsOpen(false);
                       }}
                       className={`w-full text-left p-4 rounded-xl border transition-all ${
                         report.status === 'pending' 
-                          ? 'bg-red-600/10 border-red-500/30 shadow-[0_0_15px_rgba(239,68,68,0.05)]' 
+                          ? 'bg-red-600/10 border-red-500/50 relative overflow-hidden' 
                           : 'bg-white/5 border-white/10 opacity-60'
                       }`}
                     >
-                      <div className="flex justify-between items-start mb-2">
+                      {report.status === 'pending' && (
+                        <motion.div 
+                          initial={{ x: '-100%' }}
+                          animate={{ x: '100%' }}
+                          transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
+                          className="absolute inset-0 bg-gradient-to-r from-transparent via-red-500/10 to-transparent w-1/2 -skew-x-12"
+                        />
+                      )}
+                      <div className="flex justify-between items-start mb-2 relative z-10">
                          <span className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest ${report.status === 'pending' ? 'bg-red-600 text-white' : 'bg-green-600 text-white'}`}>
                           {report.status}
                          </span>
@@ -619,6 +656,11 @@ export const WardenDashboard = ({ user, reports, onMarkReviewed, onClearReports,
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+        
+        @keyframes marquee {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(-33.33%); }
+        }
       `}</style>
     </div>
   );
