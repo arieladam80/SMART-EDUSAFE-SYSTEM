@@ -1,14 +1,15 @@
 import { io } from 'socket.io-client';
 
-// Use a fallback to current origin for better compatibility in proxied environments
-const socketUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
-
-export const socket = io(socketUrl, {
-  transports: ['polling', 'websocket'],
+// Use standard auto-discovery for Socket.io
+export const socket = io({
+  autoConnect: true,
   reconnection: true,
   reconnectionAttempts: Infinity,
   reconnectionDelay: 1000,
-  reconnectionDelayMax: 5000,
-  timeout: 20000,
-  autoConnect: true,
 });
+
+if (typeof window !== 'undefined') {
+  socket.on('connect', () => console.log('--- SYSTEM CONNECTED ---'));
+  socket.on('connect_error', (err) => console.error('--- CONNECTION ERROR ---', err.message));
+  socket.on('disconnect', (reason) => console.warn('--- DISCONNECTED ---', reason));
+}

@@ -37,14 +37,11 @@ async function startServer() {
   const io = new Server(httpServer, {
     cors: {
       origin: "*",
-      methods: ["GET", "POST"],
-      credentials: true
+      methods: ["GET", "POST"]
     },
-    allowEIO3: true, // Compatibility
     maxHttpBufferSize: 1e8, // 100MB for large base64 audio payloads
-    pingTimeout: 120000, // Increase timeouts for unstable networks
-    pingInterval: 30000,
-    transports: ['polling', 'websocket']
+    pingTimeout: 120000,
+    pingInterval: 30000
   });
 
   const PORT = 3000;
@@ -54,6 +51,15 @@ async function startServer() {
     methods: ["GET", "POST"]
   }));
   app.use(express.json({ limit: '100mb' }));
+
+  // API routes
+  app.get('/api/health', (req, res) => {
+    res.json({ 
+      status: 'ok', 
+      socketConnected: io.sockets.sockets.size,
+      uptime: process.uptime()
+    });
+  });
 
   // Socket.io logic
   io.on('connection', (socket) => {

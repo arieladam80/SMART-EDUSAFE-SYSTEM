@@ -14,15 +14,21 @@ export const StudentDashboard = ({ user, onReport, reports }: StudentProps) => {
   const [isConnected, setIsConnected] = useState(socket.connected);
 
   useEffect(() => {
+    setIsConnected(socket.connected);
+
     function onConnect() { setIsConnected(true); }
     function onDisconnect() { setIsConnected(false); }
 
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
+    socket.on('connect_error', () => setIsConnected(false));
+
+    if (!socket.connected) socket.connect();
 
     return () => {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
+      socket.off('connect_error');
     };
   }, []);
 
