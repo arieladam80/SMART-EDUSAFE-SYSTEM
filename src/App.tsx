@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { LoginView, useSmartEduSafe } from './components/AsramaComponents';
+import { LoginView, useSmartEduSafe } from './components/AsramaContext';
 import { StudentDashboard } from './components/StudentDashboard';
 import { WardenDashboard } from './components/WardenDashboard';
 import { motion, AnimatePresence } from 'motion/react';

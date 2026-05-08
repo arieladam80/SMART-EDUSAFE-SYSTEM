@@ -21,8 +21,13 @@ export const useSmartEduSafe = () => {
       const cctvRes = await fetch('/api/cctv').catch(() => null);
 
       if (reportsRes && reportsRes.ok) {
-        const data = await reportsRes.json();
-        setReports(data);
+        const data: Report[] = await reportsRes.json();
+        // Deduplicate incoming data
+        setReports(prev => {
+          const uniqueMap = new Map<string, Report>();
+          data.forEach(r => uniqueMap.set(r.id, r));
+          return Array.from(uniqueMap.values());
+        });
       } else if (reportsRes) {
         console.warn(`Reports sync failed with status: ${reportsRes.status}`);
       }
@@ -46,16 +51,23 @@ export const useSmartEduSafe = () => {
     socket.on('disconnect', () => setIsConnected(false));
     
     socket.on('init', (data) => {
-      setReports(data.reports);
+      const uniqueMap = new Map<string, Report>();
+      data.reports.forEach((r: Report) => uniqueMap.set(r.id, r));
+      setReports(Array.from(uniqueMap.values()));
       setIsCctvActive(data.isCctvActive);
     });
 
     socket.on('report_added', (report) => {
-      setReports(prev => [report, ...prev]);
+      setReports(prev => {
+        if (prev.some(r => r.id === report.id)) return prev;
+        return [report, ...prev];
+      });
     });
 
-    socket.on('reports_updated', (updatedReports) => {
-      setReports(updatedReports);
+    socket.on('reports_updated', (updatedReports: Report[]) => {
+      const uniqueMap = new Map<string, Report>();
+      updatedReports.forEach(r => uniqueMap.set(r.id, r));
+      setReports(Array.from(uniqueMap.values()));
     });
 
     socket.on('cctv_toggled', (active) => {

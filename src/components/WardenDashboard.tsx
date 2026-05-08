@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Camera, Radio, Bell, CheckCircle2, AlertCircle, Eye, Play, Pause, Calendar, User as UserIcon, LogOut, ChevronRight, Activity, Mic, Power, Shield } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { User, Report } from '../types';
-import { CCTVMonitor } from './AsramaComponents';
+import { CCTVMonitor } from './AsramaContext';
 import { socket } from '../lib/socket';
 
 interface WardenProps {
