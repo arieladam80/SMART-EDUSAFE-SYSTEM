@@ -108,9 +108,17 @@ export const StudentDashboard = ({ user, onReport, reports }: StudentProps) => {
           <h2 className="text-xl md:text-2xl font-display">Student Control</h2>
           <p className="text-slate-500 font-mono text-[10px] md:text-xs">ID: {user.id}</p>
         </div>
-        <div className={`px-3 py-1.5 md:px-4 md:py-2 rounded-full font-medium flex items-center gap-2 text-xs md:text-sm transition-colors ${isConnected ? 'bg-blue-50 text-blue-600' : 'bg-red-50 text-red-600 animate-pulse'}`}>
-          <Shield className="w-3.5 h-3.5 md:w-4 h-4" />
-          {isConnected ? 'System Connected' : 'Connecting...'}
+        <div className={`px-3 py-1.5 md:px-4 md:py-2 rounded-full font-medium flex items-center gap-2 text-xs md:text-sm transition-colors ${isConnected ? 'bg-blue-50 text-blue-600' : 'bg-red-50 text-red-600'}`}>
+          <Shield className={`w-3.5 h-3.5 md:w-4 h-4 ${!isConnected ? 'animate-pulse' : ''}`} />
+          <span>{isConnected ? 'System Connected' : 'Signal Lost'}</span>
+          {!isConnected && (
+            <button 
+              onClick={() => socket.connect()}
+              className="ml-2 bg-red-600 text-white px-2 py-0.5 rounded text-[10px] font-bold"
+            >
+              Retry
+            </button>
+          )}
         </div>
       </div>
 

@@ -322,6 +322,14 @@ export const WardenDashboard = ({ user, reports, onMarkReviewed, onClearReports,
                 <span className="text-xs font-mono font-bold tracking-tighter uppercase whitespace-nowrap">
                   Signal: {isConnected ? 'Stable' : 'Lost'}
                 </span>
+                {!isConnected && (
+                  <button 
+                    onClick={() => socket.connect()}
+                    className="text-[9px] bg-white/5 hover:bg-white/10 px-2 py-0.5 rounded border border-white/10 transition-colors"
+                  >
+                    Reconnect
+                  </button>
+                )}
               </div>
               <div className="h-4 w-px bg-white/10" />
               <div className="flex items-center gap-2">

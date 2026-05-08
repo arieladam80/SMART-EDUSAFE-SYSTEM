@@ -61,10 +61,11 @@ export const useSmartEduSafe = () => {
   const addReport = (report: Omit<Report, 'id' | 'timestamp' | 'status'>) => {
     const newReport: Report = {
       ...report,
-      id: Math.random().toString(36).substr(2, 9),
+      id: `EMG-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
       timestamp: Date.now(),
       status: 'pending'
     };
+    console.log('--- EMITTING REPORT TO SYSTEM ---', newReport.id);
     socket.emit('add_report', newReport);
   };
 
