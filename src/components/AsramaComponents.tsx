@@ -2,9 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Shield, Radio, Activity, Camera, Mic, Info, CheckCircle2, AlertCircle, LogOut, CreditCard } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { User, UserRole, Report } from '../types';
-import { io } from 'socket.io-client';
-
-const socket = io();
+import { socket } from '../lib/socket';
 
 export const useSmartEduSafe = () => {
   const [user, setUser] = useState<User | null>(() => {

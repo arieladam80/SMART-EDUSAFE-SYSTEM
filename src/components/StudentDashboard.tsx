@@ -1,7 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Camera, Mic, Radio, Shield, Send, CheckCircle2, History, AlertCircle, Info, Activity } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { User, Report } from '../types';
+import { socket } from '../lib/socket';
 
 interface StudentProps {
   user: User;
@@ -10,11 +11,35 @@ interface StudentProps {
 }
 
 export const StudentDashboard = ({ user, onReport, reports }: StudentProps) => {
+  const [isConnected, setIsConnected] = useState(socket.connected);
+
+  useEffect(() => {
+    function onConnect() { setIsConnected(true); }
+    function onDisconnect() { setIsConnected(false); }
+
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
+
+    return () => {
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
+    };
+  }, []);
+
   const [isReporting, setIsReporting] = useState(false);
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
   const [voiceBlob, setVoiceBlob] = useState<string | null>(null);
   const [selectedDorm, setSelectedDorm] = useState('MOZAC 1');
+  const [isSending, setIsSending] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+
+  const getSupportedMimeType = () => {
+    const types = ['audio/webm', 'audio/mp4', 'audio/ogg', 'audio/wav'];
+    for (const type of types) {
+      if (MediaRecorder.isTypeSupported(type)) return type;
+    }
+    return '';
+  };
 
   const startReportingTransition = async () => {
     setIsReporting(true);
@@ -24,25 +49,29 @@ export const StudentDashboard = ({ user, onReport, reports }: StudentProps) => {
     if (!isRecordingVoice) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const recorder = new MediaRecorder(stream);
+        const mimeType = getSupportedMimeType();
+        const recorder = new MediaRecorder(stream, { mimeType });
         const chunks: Blob[] = [];
         
         recorder.ondataavailable = (e) => chunks.push(e.data);
         recorder.onstop = () => {
-          const blob = new Blob(chunks, { type: 'audio/webm' });
+          const blob = new Blob(chunks, { type: mimeType });
           const reader = new FileReader();
           reader.readAsDataURL(blob);
           reader.onloadend = () => {
             const base64data = reader.result as string;
             setVoiceBlob(base64data);
           };
+          // Stop stream tracks
+          stream.getTracks().forEach(track => track.stop());
         };
         
         recorder.start();
         mediaRecorderRef.current = recorder;
         setIsRecordingVoice(true);
       } catch (err) {
-        alert("Microphone access denied.");
+        console.error("Mic error:", err);
+        alert("Microphone access denied or not supported.");
       }
     } else {
       mediaRecorderRef.current?.stop();
@@ -50,14 +79,23 @@ export const StudentDashboard = ({ user, onReport, reports }: StudentProps) => {
     }
   };
 
-  const submitReport = () => {
+  const submitReport = async () => {
     if (voiceBlob) {
-      onReport({ 
-        voiceUrl: voiceBlob,
-        dorm: selectedDorm
-      });
-      setVoiceBlob(null);
-      setIsReporting(false);
+      setIsSending(true);
+      try {
+        // Simulate a small delay for network "feel"
+        await new Promise(resolve => setTimeout(resolve, 800));
+        onReport({ 
+          voiceUrl: voiceBlob,
+          dorm: selectedDorm
+        });
+        setVoiceBlob(null);
+        setIsReporting(false);
+      } catch (err) {
+        console.error("Submit error:", err);
+      } finally {
+        setIsSending(false);
+      }
     }
   };
 
@@ -70,9 +108,9 @@ export const StudentDashboard = ({ user, onReport, reports }: StudentProps) => {
           <h2 className="text-xl md:text-2xl font-display">Student Control</h2>
           <p className="text-slate-500 font-mono text-[10px] md:text-xs">ID: {user.id}</p>
         </div>
-        <div className="bg-blue-50 text-blue-600 px-3 py-1.5 md:px-4 md:py-2 rounded-full font-medium flex items-center gap-2 text-xs md:text-sm">
+        <div className={`px-3 py-1.5 md:px-4 md:py-2 rounded-full font-medium flex items-center gap-2 text-xs md:text-sm transition-colors ${isConnected ? 'bg-blue-50 text-blue-600' : 'bg-red-50 text-red-600 animate-pulse'}`}>
           <Shield className="w-3.5 h-3.5 md:w-4 h-4" />
-          System Connected
+          {isConnected ? 'System Connected' : 'Connecting...'}
         </div>
       </div>
 
@@ -212,10 +250,20 @@ export const StudentDashboard = ({ user, onReport, reports }: StudentProps) => {
                   {voiceBlob && (
                     <button 
                       onClick={submitReport}
-                      className="bg-blue-600 text-white px-6 md:px-8 py-3 md:py-4 rounded-xl md:rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-200 text-sm md:text-base"
+                      disabled={isSending}
+                      className={`bg-blue-600 text-white px-6 md:px-8 py-3 md:py-4 rounded-xl md:rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-200 text-sm md:text-base transition-all ${isSending ? 'opacity-50 cursor-not-allowed scale-95' : 'hover:bg-blue-700'}`}
                     >
-                      <Send className="w-5 h-5 md:w-6 h-6" />
-                      Send Report
+                      {isSending ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          Sending...
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-5 h-5 md:w-6 h-6" />
+                          Send Report
+                        </>
+                      )}
                     </button>
                   )}
                 </div>

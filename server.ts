@@ -38,7 +38,8 @@ async function startServer() {
     cors: {
       origin: "*",
       methods: ["GET", "POST"]
-    }
+    },
+    maxHttpBufferSize: 1e8 // 100MB for large base64 audio payloads
   });
 
   const PORT = 3000;

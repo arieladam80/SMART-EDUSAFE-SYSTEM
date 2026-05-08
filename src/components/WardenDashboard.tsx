@@ -3,6 +3,7 @@ import { Camera, Radio, Bell, CheckCircle2, AlertCircle, Eye, Play, Pause, Calen
 import { motion, AnimatePresence } from 'motion/react';
 import { User, Report } from '../types';
 import { CCTVMonitor } from './AsramaComponents';
+import { socket } from '../lib/socket';
 
 interface WardenProps {
   user: User;
@@ -20,6 +21,7 @@ export const WardenDashboard = ({ user, reports, onMarkReviewed, onClearReports,
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioProgress, setAudioProgress] = useState(0);
   const [isAlarmActive, setIsAlarmActive] = useState(false);
+  const [alertsEnabled, setAlertsEnabled] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const alarmRef = useRef<HTMLAudioElement>(null);
   const prevPendingCount = useRef(reports.filter(r => r.status === 'pending').length);
@@ -45,6 +47,7 @@ export const WardenDashboard = ({ user, reports, onMarkReviewed, onClearReports,
     if (isAlarmActive) {
       // 1. Audio Alarm
       if (alarmRef.current) {
+        alarmRef.current.volume = 1.0;
         alarmRef.current.play().catch(err => console.error("Alarm play blocked:", err));
       }
 
@@ -80,8 +83,61 @@ export const WardenDashboard = ({ user, reports, onMarkReviewed, onClearReports,
 
   const silenceAlarm = () => setIsAlarmActive(false);
 
+  const enableSystemAlerts = async () => {
+    // Prime the audio engine
+    if (alarmRef.current) {
+      try {
+        const audio = alarmRef.current;
+        audio.muted = true;
+        await audio.play();
+        audio.pause();
+        audio.muted = false;
+      } catch (e) {
+        console.error("Audio priming failed", e);
+      }
+    }
+
+    // Request Notification permission
+    if ("Notification" in window) {
+      const permission = await Notification.requestPermission();
+      if (permission === "granted") {
+        new Notification("Security System Active", {
+          body: "You will now receive emergency alerts and audible alarms.",
+          icon: "/favicon.ico"
+        });
+      }
+    }
+
+    // Prime vibration
+    if ("vibrate" in navigator) {
+      navigator.vibrate(50);
+    }
+
+    setAlertsEnabled(true);
+  };
+
+  const testAlarm = () => {
+    setIsAlarmActive(true);
+    setTimeout(() => setIsAlarmActive(false), 3000);
+  };
+
   // Sort reports by most recent first
   const sortedReports = [...reports].sort((a, b) => b.timestamp - a.timestamp);
+
+  const [isConnected, setIsConnected] = useState(socket.connected);
+
+  useEffect(() => {
+    function onConnect() { setIsConnected(true); }
+    function onDisconnect() { setIsConnected(false); }
+
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
+
+    return () => {
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
+    };
+  }, []);
 
   const cameras = ['MOZAC 1', 'MOZAC 2', 'MOZAC 3'];
 
@@ -260,13 +316,20 @@ export const WardenDashboard = ({ user, reports, onMarkReviewed, onClearReports,
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
         {/* Top Monitor Bar - Desktop Only hidden on mobile since it has its own header */}
         <header className="hidden md:flex h-16 border-b border-white/5 items-center justify-between px-8 bg-[#1a1b1e]">
-          <div className="flex items-center gap-8">
-            <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${activeCamera ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' : 'bg-red-500'}`} />
-              <span className="text-xs font-mono font-bold tracking-tighter uppercase whitespace-nowrap">
-                Network Status: {activeCamera ? 'Feed Active' : 'Idle'}
-              </span>
-            </div>
+            <div className="flex items-center gap-8">
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-blue-500 shadow-[0_0_8px_#3b82f6]' : 'bg-red-500 animate-pulse'}`} />
+                <span className="text-xs font-mono font-bold tracking-tighter uppercase whitespace-nowrap">
+                  Signal: {isConnected ? 'Stable' : 'Lost'}
+                </span>
+              </div>
+              <div className="h-4 w-px bg-white/10" />
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${activeCamera ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' : 'bg-white/20'}`} />
+                <span className="text-xs font-mono font-bold tracking-tighter uppercase whitespace-nowrap">
+                  Feed: {activeCamera ? 'Active' : 'Idle'}
+                </span>
+              </div>
             <div className="h-4 w-px bg-white/10" />
             <div className="flex items-center gap-2 text-white/60">
               <Calendar className="w-4 h-4" />
@@ -323,6 +386,42 @@ export const WardenDashboard = ({ user, reports, onMarkReviewed, onClearReports,
 
         {/* Dashboard Area */}
         <div className={`flex-1 overflow-hidden transition-all duration-300 ${pendingReports.length > 0 ? 'pt-8' : ''}`}>
+          {/* Security Status Banner */}
+          {!alertsEnabled && (
+            <div className="mx-4 md:mx-8 mt-4 p-4 bg-blue-600 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-lg shadow-blue-900/20">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-lg">
+                  <Shield className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold">System Alerts Not Active</p>
+                  <p className="text-[10px] text-white/70 font-mono">Enable notifications, audio, and vibration to receive emergency alerts.</p>
+                </div>
+              </div>
+              <button 
+                onClick={enableSystemAlerts}
+                className="bg-white text-blue-600 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest hover:bg-blue-50 transition-colors whitespace-nowrap"
+              >
+                Enable System Alerts
+              </button>
+            </div>
+          )}
+
+          {alertsEnabled && (
+            <div className="mx-4 md:mx-8 mt-4 px-4 py-2 bg-green-500/10 border border-green-500/20 rounded-lg flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                <span className="text-[10px] uppercase font-bold tracking-widest text-green-500">Global Security Node Active</span>
+              </div>
+              <button 
+                onClick={testAlarm}
+                className="text-[10px] text-white/30 hover:text-white underline decoration-dotted underline-offset-4"
+              >
+                Test Device Alarm
+              </button>
+            </div>
+          )}
+
           {/* Surveillance Feed */}
           <section className="h-full p-4 md:p-8 overflow-y-auto space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
