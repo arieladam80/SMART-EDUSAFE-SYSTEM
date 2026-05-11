@@ -22,8 +22,13 @@ if (fs.existsSync(secretsPath)) {
 // --- Firebase Configuration ---
 let firestore: admin.firestore.Firestore | null = null;
 try {
-  const serviceAccountVar = process.env.FIREBASE_SERVICE_ACCOUNT;
+  let serviceAccountVar = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (serviceAccountVar) {
+    // Clean up potential quotes from env loading
+    if (serviceAccountVar.startsWith("'") && serviceAccountVar.endsWith("'")) {
+      serviceAccountVar = serviceAccountVar.slice(1, -1);
+    }
+    
     const serviceAccount = JSON.parse(serviceAccountVar);
     if (!admin.apps.length) {
       admin.initializeApp({
@@ -31,7 +36,7 @@ try {
       });
     }
     firestore = admin.firestore();
-    console.log('[Firebase] Admin SDK initialized successfully.');
+    console.log('[Firebase] Admin SDK initialized.');
   } else {
     // Try individual environment variables
     const projectId = process.env.FIREBASE_PROJECT_ID;
@@ -49,11 +54,11 @@ try {
         });
       }
       firestore = admin.firestore();
-      console.log('[Firebase] Admin SDK initialized via individual env vars.');
+      console.log('[Firebase] Admin SDK initialized via vars.');
     }
   }
 } catch (e) {
-  console.error('[Firebase] Initialization error:', e);
+  console.error('[Firebase] Init error:', e);
 }
 
 // --- Supabase Configuration ---
