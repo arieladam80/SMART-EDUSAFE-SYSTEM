@@ -13,6 +13,7 @@ export default function App() {
     user, 
     reports, 
     isCctvActive, 
+    dbStatus,
     login, 
     logout, 
     addReport, 
@@ -64,6 +65,7 @@ export default function App() {
               <WardenDashboard 
                 user={user} 
                 reports={reports} 
+                dbStatus={dbStatus}
                 onMarkReviewed={markAsReviewed}
                 onClearReports={clearReports}
                 onLogout={logout}

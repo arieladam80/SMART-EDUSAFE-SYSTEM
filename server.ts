@@ -51,13 +51,14 @@ async function loadInitialState() {
 }
 
 async function startServer() {
-  await loadInitialState();
+  // Fire and forget initial load to avoid blocking server start
+  loadInitialState().catch(err => console.error('[Supabase] Initial load background failure:', err));
 
   const app = express();
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
     cors: { origin: "*", methods: ["GET", "POST"] },
-    transports: ['polling', 'websocket'],
+    transports: ['websocket', 'polling'],
     allowEIO3: true,
     maxHttpBufferSize: 1e8,
     pingTimeout: 120000,
@@ -65,6 +66,13 @@ async function startServer() {
   });
 
   const PORT = Number(process.env.PORT) || 3000;
+
+  app.use((req, res, next) => {
+    if (req.url.startsWith('/socket.io')) {
+      console.log(`[Socket.io Request] ${req.method} ${req.url}`);
+    }
+    next();
+  });
 
   app.use(cors({ origin: "*", methods: ["GET", "POST"] }));
   app.use(express.json({ limit: '100mb' }));
@@ -89,6 +97,29 @@ async function startServer() {
   };
 
   // API routes
+  app.get('/api/supabase-status', async (req, res) => {
+    if (!supabaseUrl || !supabaseKey) {
+      return res.status(200).json({ status: 'missing_config', error: 'Credentials not provided' });
+    }
+
+    try {
+      // Test actual connection by reaching out to Supabase
+      const { error } = await supabase.from('reports').select('count', { count: 'exact', head: true });
+      
+      if (error) {
+        return res.status(200).json({ 
+          status: 'error', 
+          error: error.message,
+          code: error.code 
+        });
+      }
+
+      res.json({ status: 'connected', tables: ['reports', 'system_config'] });
+    } catch (err: any) {
+      res.status(200).json({ status: 'failing', error: err.message });
+    }
+  });
+
   app.get('/api/reports', (req, res) => {
     res.json(reports);
   });

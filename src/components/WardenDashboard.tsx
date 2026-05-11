@@ -8,13 +8,15 @@ import { socket } from '../lib/socket';
 interface WardenProps {
   user: User;
   reports: Report[];
+  dbStatus: { status: string; error?: string };
   onMarkReviewed: (id: string) => void;
   onClearReports: () => void;
   onLogout: () => void;
 }
 
-export const WardenDashboard = ({ user, reports, onMarkReviewed, onClearReports, onLogout }: WardenProps) => {
+export const WardenDashboard = ({ user, reports, dbStatus, onMarkReviewed, onClearReports, onLogout }: WardenProps) => {
   const [activeCamera, setActiveCamera] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<'surveillance' | 'reports'>('surveillance');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isAlertsOpen, setIsAlertsOpen] = useState(false);
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
@@ -284,29 +286,69 @@ export const WardenDashboard = ({ user, reports, onMarkReviewed, onClearReports,
         md:relative md:translate-x-0
         ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
-        <div className="flex items-center justify-between md:mb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-red-600 rounded-xl flex items-center justify-center">
-              <Radio className="w-6 h-6" />
+        <div className="flex flex-col gap-6">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-red-600 rounded-2xl flex items-center justify-center shadow-lg shadow-red-600/20">
+              <Radio className="w-8 h-8" />
             </div>
-            <div>
-              <h1 className="font-display text-xl font-bold tracking-tight">SMART EDUSAFE SYSTEM</h1>
-              <span className="text-[10px] font-mono text-white/40 uppercase tracking-widest text-red-500">Monitor Alpha</span>
+            <div className="flex flex-col">
+              <h1 className="font-display text-lg font-bold leading-tight tracking-tight">SMART EDUSAFE</h1>
+              <h1 className="font-display text-xl font-bold leading-tight tracking-tight">SYSTEM</h1>
+              <div className="mt-1">
+                <span className="text-[10px] font-mono text-white/30 uppercase tracking-[0.3em]">Monitor Alpha</span>
+              </div>
             </div>
           </div>
-          <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-2">
-            <LogOut className="w-5 h-5 rotate-180" />
-          </button>
         </div>
 
-        <nav className="flex-1 space-y-1">
-          <button className="w-full text-left p-3 rounded-lg text-white/60 hover:bg-white/5 flex items-center gap-3 mt-4">
-            <Camera className="w-5 h-5 text-red-500" />
-            <span className="font-medium">Surveillance Hub</span>
+        <nav className="flex-1 space-y-2">
+          <button 
+            onClick={() => setActiveView('surveillance')}
+            className={`w-full text-left p-3.5 rounded-xl flex items-center gap-4 transition-all duration-300 ${activeView === 'surveillance' ? 'bg-white/5 text-white' : 'text-white/40 hover:bg-white/5 hover:text-white/60'}`}
+          >
+            <Camera className={`w-5 h-5 ${activeView === 'surveillance' ? 'text-red-500' : 'text-white/20'}`} />
+            <span className="font-bold tracking-wide">Surveillance Hub</span>
+          </button>
+          <button 
+            onClick={() => setActiveView('reports')}
+            className={`w-full text-left p-3.5 rounded-xl flex items-center gap-4 transition-all duration-300 ${activeView === 'reports' ? 'bg-white/5 text-white' : 'text-white/40 hover:bg-white/5 hover:text-white/60'}`}
+          >
+            <Bell className={`w-5 h-5 ${activeView === 'reports' ? 'text-red-500' : 'text-white/20'}`} />
+            <div className="flex-1 flex items-center justify-between">
+              <span className="font-bold tracking-wide">Report Data</span>
+              {pendingReports.length > 0 && (
+                <span className="w-5 h-5 bg-red-600 text-white text-[10px] font-bold rounded-lg flex items-center justify-center animate-pulse shadow-lg shadow-red-600/40">
+                  {pendingReports.length}
+                </span>
+              )}
+            </div>
           </button>
         </nav>
 
-        <div className="pt-8 border-t border-white/5">
+        <div className="pt-8 border-t border-white/5 space-y-4">
+          <div className="bg-white/5 rounded-2xl p-4 border border-white/5">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[10px] font-mono text-white/30 uppercase tracking-widest font-bold">Persistence</span>
+              <div className={`w-2 h-2 rounded-full ${
+                dbStatus.status === 'connected' ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' : 
+                dbStatus.status === 'checking' ? 'bg-amber-500 animate-pulse' : 'bg-red-500'
+              }`} />
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-white/5 rounded-lg border border-white/5">
+                <Shield className={`w-4 h-4 ${dbStatus.status === 'connected' ? 'text-green-500' : 'text-white/20'}`} />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-xs font-bold text-white/80">Supabase DB</span>
+                <span className={`text-[9px] font-mono uppercase tracking-tight ${
+                  dbStatus.status === 'connected' ? 'text-green-500/80' : 'text-red-400'
+                }`}>
+                  {dbStatus.status === 'connected' ? 'Ready & Synced' : dbStatus.error || 'Connection Failed'}
+                </span>
+              </div>
+            </div>
+          </div>
+
           <div className="flex items-center gap-3 p-3 rounded-xl bg-white/5 mb-4">
             <div className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center">
               <UserIcon className="w-5 h-5 text-white/60" />
@@ -413,144 +455,228 @@ export const WardenDashboard = ({ user, reports, onMarkReviewed, onClearReports,
 
         {/* Dashboard Area */}
         <div className={`flex-1 overflow-hidden transition-all duration-300 ${pendingReports.length > 0 ? 'pt-8' : ''}`}>
-          {/* Security Status Banner */}
-          {!alertsEnabled && (
-            <div className="mx-4 md:mx-8 mt-4 p-4 bg-blue-600 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-lg shadow-blue-900/20">
-              <div className="flex items-center gap-3">
-                <div className="bg-white/20 p-2 rounded-lg">
-                  <Shield className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <p className="text-sm font-bold">System Alerts Not Active</p>
-                  <p className="text-[10px] text-white/70 font-mono">Enable notifications, audio, and vibration to receive emergency alerts.</p>
-                </div>
-              </div>
-              <button 
-                onClick={enableSystemAlerts}
-                className="bg-white text-blue-600 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest hover:bg-blue-50 transition-colors whitespace-nowrap"
-              >
-                Enable System Alerts
-              </button>
-            </div>
-          )}
-
-          {alertsEnabled && (
-            <div className="mx-4 md:mx-8 mt-4 px-4 py-2 bg-green-500/10 border border-green-500/20 rounded-lg flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                <span className="text-[10px] uppercase font-bold tracking-widest text-green-500">Global Security Node Active</span>
-              </div>
-              <button 
-                onClick={testAlarm}
-                className="text-[10px] text-white/30 hover:text-white underline decoration-dotted underline-offset-4"
-              >
-                Test Device Alarm
-              </button>
-            </div>
-          )}
-
-          {/* Surveillance Feed */}
-          <section className="h-full p-4 md:p-8 overflow-y-auto space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
-              <h2 className="text-sm font-mono font-bold uppercase tracking-[0.2em] text-white/40">Active Surveillance Network</h2>
-              <div className="flex items-center gap-4">
-                {isAnyPrivacyLocked ? (
-                  <span className="text-[10px] font-mono text-blue-400 flex items-center gap-1.5 bg-blue-400/10 px-2 py-0.5 rounded">
-                    <Shield className="w-3 h-3" /> GLOBAL PRIVACY SHIELD ACTIVE
-                  </span>
-                ) : (
-                  <span className="text-[10px] font-mono text-green-500 animate-pulse">● SELECTIVE STREAM ACCESS</span>
-                )}
-                {!activeCamera && !isAnyPrivacyLocked && <span className="text-[10px] font-mono text-white/20">SELECT AUTHENTICATED SOURCE</span>}
-              </div>
-            </div>
-            
-            <div className="relative">
-              <CCTVMonitor isActive={!!activeCamera} label={activeCamera || (isAnyPrivacyLocked ? 'PRIVACY PROTECTED' : 'LOCKED')} />
-              
-              {!activeCamera && (
-                <motion.div 
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="absolute inset-0 z-10 bg-[#1a1b1e]/90 flex flex-col items-center justify-center text-center p-8 backdrop-blur-sm rounded-2xl border-2 border-white/5"
-                >
-                  <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 ${isAnyPrivacyLocked ? 'bg-blue-500/10' : 'bg-red-500/10'}`}>
-                    <Shield className={`w-8 h-8 ${isAnyPrivacyLocked ? 'text-blue-500' : 'text-red-500'}`} />
+          {activeView === 'surveillance' ? (
+            <>
+              {/* Security Status Banner */}
+              {!alertsEnabled && (
+                <div className="mx-4 md:mx-8 mt-4 p-4 bg-blue-600 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-lg shadow-blue-900/20">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-white/20 p-2 rounded-lg">
+                      <Shield className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold">System Alerts Not Active</p>
+                      <p className="text-[10px] text-white/70 font-mono">Enable notifications, audio, and vibration to receive emergency alerts.</p>
+                    </div>
                   </div>
-                  <h3 className="text-xl font-bold font-display mb-2 uppercase tracking-wide">
-                    {isAnyPrivacyLocked ? 'Privacy Shield Active' : 'Select Authorized Feed'}
-                  </h3>
-                  <p className="text-white/40 text-sm max-w-sm font-mono leading-relaxed">
-                    {isAnyPrivacyLocked 
-                      ? 'Surveillance is locked. Access only unlocks when a report specifying a dorm location is received.' 
-                      : 'Emergency signals detected. Only cameras associated with reporting dorms are authorized for viewing.'}
-                  </p>
-                </motion.div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-               {cameras.map(cam => {
-                const isLocked = isPrivacyLocked(cam);
-                return (
                   <button 
-                    key={cam}
-                    disabled={isLocked}
-                    onClick={() => selectCamera(cam)}
-                    className={`relative group overflow-hidden bg-[#1a1b1e] border-2 h-40 rounded-2xl transition-all p-6 text-left ${
-                      activeCamera === cam 
-                        ? 'border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.2)]' 
-                        : isLocked 
-                          ? 'border-white/5 opacity-40 cursor-not-allowed' 
-                          : 'border-white/5 hover:border-white/20'
+                    onClick={enableSystemAlerts}
+                    className="bg-white text-blue-600 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest hover:bg-blue-50 transition-colors whitespace-nowrap"
+                  >
+                    Enable System Alerts
+                  </button>
+                </div>
+              )}
+
+              {alertsEnabled && (
+                <div className="mx-4 md:mx-8 mt-4 px-4 py-2 bg-green-500/10 border border-green-500/20 rounded-lg flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                    <span className="text-[10px] uppercase font-bold tracking-widest text-green-500">Global Security Node Active</span>
+                  </div>
+                  <button 
+                    onClick={testAlarm}
+                    className="text-[10px] text-white/30 hover:text-white underline decoration-dotted underline-offset-4"
+                  >
+                    Test Device Alarm
+                  </button>
+                </div>
+              )}
+
+              {/* Surveillance Feed */}
+              <section className="h-full p-4 md:p-8 overflow-y-auto space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
+                  <h2 className="text-sm font-mono font-bold uppercase tracking-[0.2em] text-white/40">Active Surveillance Network</h2>
+                  <div className="flex items-center gap-4">
+                    {isAnyPrivacyLocked ? (
+                      <span className="text-[10px] font-mono text-blue-400 flex items-center gap-1.5 bg-blue-400/10 px-2 py-0.5 rounded">
+                        <Shield className="w-3 h-3" /> GLOBAL PRIVACY SHIELD ACTIVE
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-mono text-green-500 animate-pulse">● SELECTIVE STREAM ACCESS</span>
+                    )}
+                    {!activeCamera && !isAnyPrivacyLocked && <span className="text-[10px] font-mono text-white/20">SELECT AUTHENTICATED SOURCE</span>}
+                  </div>
+                </div>
+                
+                <div className="relative">
+                  <CCTVMonitor isActive={!!activeCamera} label={activeCamera || (isAnyPrivacyLocked ? 'PRIVACY PROTECTED' : 'LOCKED')} />
+                  
+                  {!activeCamera && (
+                    <motion.div 
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="absolute inset-0 z-10 bg-[#1a1b1e]/90 flex flex-col items-center justify-center text-center p-8 backdrop-blur-sm rounded-2xl border-2 border-white/5"
+                    >
+                      <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 ${isAnyPrivacyLocked ? 'bg-blue-500/10' : 'bg-red-500/10'}`}>
+                        <Shield className={`w-8 h-8 ${isAnyPrivacyLocked ? 'text-blue-500' : 'text-red-500'}`} />
+                      </div>
+                      <h3 className="text-xl font-bold font-display mb-2 uppercase tracking-wide">
+                        {isAnyPrivacyLocked ? 'Privacy Shield Active' : 'Select Authorized Feed'}
+                      </h3>
+                      <p className="text-white/40 text-sm max-w-sm font-mono leading-relaxed">
+                        {isAnyPrivacyLocked 
+                          ? 'Surveillance is locked. Access only unlocks when a report specifying a dorm location is received.' 
+                          : 'Emergency signals detected. Only cameras associated with reporting dorms are authorized for viewing.'}
+                      </p>
+                    </motion.div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                   {cameras.map(cam => {
+                    const isLocked = isPrivacyLocked(cam);
+                    return (
+                      <button 
+                        key={cam}
+                        disabled={isLocked}
+                        onClick={() => selectCamera(cam)}
+                        className={`relative group overflow-hidden bg-[#1a1b1e] border-2 h-40 rounded-2xl transition-all p-6 text-left ${
+                          activeCamera === cam 
+                            ? 'border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.2)]' 
+                            : isLocked 
+                              ? 'border-white/5 opacity-40 cursor-not-allowed' 
+                              : 'border-white/5 hover:border-white/20'
+                        }`}
+                      >
+                        <div className="flex flex-col h-full justify-between">
+                          <div className="flex justify-between items-start">
+                            {isLocked ? (
+                              <Shield className="w-6 h-6 text-white/10" />
+                            ) : (
+                              <Camera className={`w-6 h-6 ${activeCamera === cam ? 'text-red-500' : 'text-white/20'}`} />
+                            )}
+                            
+                            {activeCamera === cam && (
+                              <div className="flex items-center gap-1.5 px-2 py-1 bg-red-600 rounded text-[8px] font-bold uppercase tracking-widest text-white">
+                                <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                                Live
+                              </div>
+                            )}
+                            
+                            {isLocked && (
+                              <div className="bg-white/5 px-2 py-1 rounded text-[8px] font-bold text-white/20 uppercase tracking-widest">
+                                Locked
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-mono text-white/40 uppercase tracking-widest mb-1">Source Label</p>
+                            <h4 className="text-xl font-bold font-display">{cam}</h4>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                   })}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-6 relative group overflow-hidden">
+                    <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                      <Activity className="w-12 h-12" />
+                    </div>
+                    <h4 className="text-[10px] font-mono text-white/40 uppercase mb-2">Total System Reports</h4>
+                    <div className="text-4xl font-display font-bold">{reports.length}</div>
+                  </div>
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-6 relative group overflow-hidden">
+                    <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity font-display italic text-6xl">!</div>
+                    <h4 className="text-[10px] font-mono text-white/40 uppercase mb-2">Reports Awaiting Review</h4>
+                    <div className="text-4xl font-display font-bold text-red-500">{pendingReports.length}</div>
+                  </div>
+                </div>
+              </section>
+            </>
+          ) : (
+            <div className="h-full flex flex-col bg-[#151619]">
+              <div className="p-10 pb-6">
+                <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-8 border-b border-white/5">
+                  <div>
+                    <h2 className="text-3xl font-bold font-display uppercase tracking-tight mb-2">Alert Center</h2>
+                    <p className="text-xs text-white/30 font-mono uppercase tracking-[0.2em]">System Logs & Incident Signals Database</p>
+                  </div>
+                </div>
+                
+                <div className="mt-8">
+                  <button 
+                    onClick={handleClearAll}
+                    className={`w-full py-3.5 rounded-xl text-[10px] font-mono font-bold tracking-[0.2em] uppercase transition-all duration-300 border ${
+                      isConfirmingClear 
+                        ? 'bg-red-600 border-red-500 text-white animate-pulse shadow-lg shadow-red-600/20' 
+                        : 'bg-white/5 border-white/10 text-white/30 hover:bg-white/10 hover:text-white/60 hover:border-white/20'
                     }`}
                   >
-                    <div className="flex flex-col h-full justify-between">
-                      <div className="flex justify-between items-start">
-                        {isLocked ? (
-                          <Shield className="w-6 h-6 text-white/10" />
-                        ) : (
-                          <Camera className={`w-6 h-6 ${activeCamera === cam ? 'text-red-500' : 'text-white/20'}`} />
-                        )}
-                        
-                        {activeCamera === cam && (
-                          <div className="flex items-center gap-1.5 px-2 py-1 bg-red-600 rounded text-[8px] font-bold uppercase tracking-widest text-white">
-                            <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-                            Live
-                          </div>
-                        )}
-                        
-                        {isLocked && (
-                          <div className="bg-white/5 px-2 py-1 rounded text-[8px] font-bold text-white/20 uppercase tracking-widest">
-                            Locked
-                          </div>
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-[10px] font-mono text-white/40 uppercase tracking-widest mb-1">Source Label</p>
-                        <h4 className="text-xl font-bold font-display">{cam}</h4>
-                      </div>
-                    </div>
+                    {isConfirmingClear ? 'Confirm System Reset' : 'Clear All Logs'}
                   </button>
-                );
-               })}
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="bg-white/5 border border-white/10 rounded-xl p-6 relative group overflow-hidden">
-                <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
-                  <Activity className="w-12 h-12" />
                 </div>
-                <h4 className="text-[10px] font-mono text-white/40 uppercase mb-2">Total System Reports</h4>
-                <div className="text-4xl font-display font-bold">{reports.length}</div>
               </div>
-              <div className="bg-white/5 border border-white/10 rounded-xl p-6 relative group overflow-hidden">
-                <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity font-display italic text-6xl">!</div>
-                <h4 className="text-[10px] font-mono text-white/40 uppercase mb-2">Reports Awaiting Review</h4>
-                <div className="text-4xl font-display font-bold text-red-500">{pendingReports.length}</div>
+              
+              <div className="flex-1 overflow-y-auto px-10 pb-10 space-y-6">
+                {sortedReports.length === 0 ? (
+                  <div className="h-64 flex flex-col items-center justify-center text-white/5 border-2 border-dashed border-white/5 rounded-[2.5rem] space-y-6">
+                    <Radio className="w-16 h-16 opacity-5" />
+                    <p className="text-[10px] font-mono uppercase tracking-[0.3em]">No incident signals detected</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-6">
+                    {sortedReports.map(report => (
+                      <motion.button
+                        layoutId={`grid-alert-${report.id}`}
+                        key={report.id}
+                        onClick={() => setSelectedReport(report)}
+                        className={`text-left p-8 rounded-[2rem] border transition-all duration-300 group relative overflow-hidden bg-[#1a1b1e] ${
+                          report.status === 'pending' 
+                            ? 'border-red-600/30 hover:border-red-600/60 shadow-lg shadow-red-900/10' 
+                            : 'border-white/5 hover:border-white/10'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-8">
+                          <span className={`px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase tracking-widest ${
+                            report.status === 'pending' ? 'bg-red-600 text-white' : 'bg-green-600 text-white'
+                          }`}>
+                            {report.status}
+                          </span>
+                          <span className="text-[10px] font-mono text-white/20 font-bold uppercase tracking-tighter">
+                            {new Date(report.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        
+                        <div className="space-y-4">
+                          <h3 className="text-xl font-bold font-display tracking-tight text-white/90">Student {report.reporterId}</h3>
+                          <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-white/5 rounded-lg border border-white/5">
+                            <span className="text-[10px] font-mono text-white/40 uppercase font-bold tracking-widest">Dorm: {report.dorm}</span>
+                          </div>
+                        </div>
+                        
+                        <div className="mt-8 pt-6 border-t border-white/5 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <Mic className={`w-4 h-4 ${report.status === 'pending' ? 'text-red-500' : 'text-white/10'}`} />
+                            <span className="text-[10px] font-mono text-white/30 italic font-medium">Voice evidence attached</span>
+                          </div>
+                          <ChevronRight className="w-5 h-5 text-white/10 group-hover:text-white group-hover:translate-x-1 transition-all" />
+                        </div>
+
+                        {report.status === 'pending' && (
+                          <div className="absolute top-0 right-0 p-6">
+                            <div className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse shadow-[0_0_15px_#dc2626]" />
+                          </div>
+                        )}
+                      </motion.button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
-          </section>
+          )}
         </div>
       </main>
 
@@ -592,7 +718,7 @@ export const WardenDashboard = ({ user, reports, onMarkReviewed, onClearReports,
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
                 {sortedReports.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-white/10 p-12 text-center space-y-4">
                     <Radio className="w-12 h-12 opacity-5" />
@@ -606,7 +732,7 @@ export const WardenDashboard = ({ user, reports, onMarkReviewed, onClearReports,
                       animate={report.status === 'pending' ? { 
                         boxShadow: [
                           '0 0 0px rgba(239, 68, 68, 0)',
-                          '0 0 15px rgba(239, 68, 68, 0.3)',
+                          '0 0 20px rgba(239, 68, 68, 0.2)',
                           '0 0 0px rgba(239, 68, 68, 0)'
                         ]
                       } : {}}
@@ -615,35 +741,27 @@ export const WardenDashboard = ({ user, reports, onMarkReviewed, onClearReports,
                         setSelectedReport(report);
                         setIsAlertsOpen(false);
                       }}
-                      className={`w-full text-left p-4 rounded-xl border transition-all ${
+                      className={`w-full text-left p-6 rounded-2xl border transition-all duration-300 relative overflow-hidden bg-[#151619] ${
                         report.status === 'pending' 
-                          ? 'bg-red-600/10 border-red-500/50 relative overflow-hidden' 
-                          : 'bg-white/5 border-white/10 opacity-60'
+                          ? 'border-red-600/30' 
+                          : 'border-white/5 opacity-60'
                       }`}
                     >
-                      {report.status === 'pending' && (
-                        <motion.div 
-                          initial={{ x: '-100%' }}
-                          animate={{ x: '100%' }}
-                          transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
-                          className="absolute inset-0 bg-gradient-to-r from-transparent via-red-500/10 to-transparent w-1/2 -skew-x-12"
-                        />
-                      )}
-                      <div className="flex justify-between items-start mb-2 relative z-10">
+                      <div className="flex justify-between items-start mb-6 relative z-10">
                          <span className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest ${report.status === 'pending' ? 'bg-red-600 text-white' : 'bg-green-600 text-white'}`}>
                           {report.status}
                          </span>
-                         <span className="text-[9px] font-mono text-white/30">{new Date(report.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                         <span className="text-[9px] font-mono text-white/30 font-bold">{new Date(report.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                       </div>
-                      <p className="text-sm font-bold truncate mb-1">Student {report.reporterId}</p>
-                      <div className="flex flex-wrap gap-2 mb-2">
-                        <span className="text-[8px] font-mono bg-white/5 px-2 py-0.5 rounded text-white/40 border border-white/10 uppercase font-bold tracking-widest">
+                      <p className="text-base font-bold truncate mb-2 text-white/90">Student {report.reporterId}</p>
+                      <div className="flex flex-wrap gap-2 mb-6">
+                        <span className="text-[9px] font-mono bg-white/5 px-2 py-0.5 rounded text-white/40 border border-white/5 uppercase font-bold tracking-widest">
                           Dorm: {report.dorm}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Mic className="w-3 h-3 text-white/40" />
-                        <span className="text-[10px] font-mono text-white/40 italic">Voice evidence attached</span>
+                      <div className="flex items-center gap-2 pt-4 border-t border-white/5">
+                        <Mic className={`w-3.5 h-3.5 ${report.status === 'pending' ? 'text-red-500' : 'text-white/10'}`} />
+                        <span className="text-[10px] font-mono text-white/30 italic">Voice evidence attached</span>
                       </div>
                     </motion.button>
                   ))

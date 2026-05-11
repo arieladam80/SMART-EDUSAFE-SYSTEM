@@ -1,8 +1,8 @@
 import { io } from 'socket.io-client';
 
-// Configure socket with explicit transports and fallback
+// Configure socket with explicit websocket-only transport to bypass polling issues in proxies
 export const socket = io({
-  transports: ['polling', 'websocket'],
+  transports: ['websocket'],
   autoConnect: true,
   reconnection: true,
   reconnectionAttempts: Infinity,
@@ -13,14 +13,11 @@ export const socket = io({
 
 if (typeof window !== 'undefined') {
   socket.on('connect', () => {
-    console.log('%c--- SYSTEM CONNECTED ---', 'color: green; font-weight: bold;');
+    console.log('%c--- SYSTEM CONNECTED (WEBSOCKET) ---', 'color: green; font-weight: bold;');
   });
   socket.on('connect_error', (err) => {
     console.error('%c--- CONNECTION ERROR ---', 'color: red; font-weight: bold;', err.message);
-    // Force transport if it's struggling
-    if (socket.io.opts.transports[0] === 'websocket') {
-       socket.io.opts.transports = ['polling', 'websocket'];
-    }
+    // If websocket fails entirely, we log it, but we stay on websocket as polling is likely blocked or broken
   });
   socket.on('disconnect', (reason) => {
     console.warn('%c--- DISCONNECTED ---', 'color: orange; font-weight: bold;', reason);

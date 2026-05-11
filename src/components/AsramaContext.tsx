@@ -13,12 +13,14 @@ export const useSmartEduSafe = () => {
   const [reports, setReports] = useState<Report[]>([]);
   const [isCctvActive, setIsCctvActive] = useState(false);
   const [isConnected, setIsConnected] = useState(socket.connected);
+  const [dbStatus, setDbStatus] = useState<{ status: string; error?: string }>({ status: 'checking' });
 
   // Sync state helpers
   const syncState = async () => {
     try {
       const reportsRes = await fetch('/api/reports').catch(() => null);
       const cctvRes = await fetch('/api/cctv').catch(() => null);
+      const dbRes = await fetch('/api/supabase-status').catch(() => null);
 
       if (reportsRes && reportsRes.ok) {
         const data: Report[] = await reportsRes.json();
@@ -28,15 +30,16 @@ export const useSmartEduSafe = () => {
           data.forEach(r => uniqueMap.set(r.id, r));
           return Array.from(uniqueMap.values());
         });
-      } else if (reportsRes) {
-        console.warn(`Reports sync failed with status: ${reportsRes.status}`);
       }
 
       if (cctvRes && cctvRes.ok) {
         const data = await cctvRes.json();
         setIsCctvActive(data.isCctvActive);
-      } else if (cctvRes) {
-        console.warn(`CCTV sync failed with status: ${cctvRes.status}`);
+      }
+
+      if (dbRes && dbRes.ok) {
+        const data = await dbRes.json();
+        setDbStatus(data);
       }
     } catch (err) {
       console.error('State sync critical failure:', err);
@@ -147,7 +150,7 @@ export const useSmartEduSafe = () => {
     socket.emit('clear_reports');
   };
 
-  return { user, reports, isCctvActive, login, logout, addReport, markAsReviewed, toggleCctv, clearReports };
+  return { user, reports, isCctvActive, dbStatus, login, logout, addReport, markAsReviewed, toggleCctv, clearReports };
 };
 
 // --- Components ---
