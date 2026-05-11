@@ -5,15 +5,38 @@ import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
+import { get } from '@vercel/edge-config';
 
 // Supabase Configuration
-const supabaseUrl = process.env.SUPABASE_URL || '';
-const supabaseKey = process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || '';
+let supabaseUrl = process.env.SUPABASE_URL || '';
+let supabaseKey = process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || '';
+let supabase: any = null;
 
-// Create client only if credentials exist, otherwise use a proxy to avoid crashes
-const supabase = (supabaseUrl && supabaseKey) 
-  ? createClient(supabaseUrl, supabaseKey)
-  : null;
+// Initialize Supabase
+async function initSupabase() {
+  // If keys missing in env, try Edge Config as backup
+  if (!supabaseUrl || !supabaseKey) {
+    try {
+      if (process.env.EDGE_CONFIG) {
+        console.log('[Supabase] Missing env vars, checking Edge Config backup...');
+        const configUrl = await get('SUPABASE_URL');
+        const configKey = (await get('SUPABASE_KEY')) || (await get('SUPABASE_ANON_KEY'));
+        
+        if (typeof configUrl === 'string') supabaseUrl = configUrl;
+        if (typeof configKey === 'string') supabaseKey = configKey;
+      }
+    } catch (e) {
+      console.warn('[Supabase] Edge Config backup fetch failed:', e);
+    }
+  }
+
+  if (supabaseUrl && supabaseKey) {
+    supabase = createClient(supabaseUrl, supabaseKey);
+    console.log('[Supabase] Client initialized successfully.');
+  } else {
+    console.warn('[Supabase] No credentials found in ENV or Edge Config.');
+  }
+}
 
 
 // Server-side state (Cache)
@@ -56,7 +79,8 @@ async function loadInitialState() {
 }
 
 async function startServer() {
-  // Fire and forget initial load to avoid blocking server start
+  // Initialize Supabase and fire initial load
+  await initSupabase();
   loadInitialState().catch(err => console.error('[Supabase] Initial load background failure:', err));
 
   const app = express();
