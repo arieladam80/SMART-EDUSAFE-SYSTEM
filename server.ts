@@ -6,14 +6,38 @@ import path from 'path';
 import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
 import { get } from '@vercel/edge-config';
+import dotenv from 'dotenv';
+import fs from 'fs';
 
-// Supabase Configuration
+// Load environment variables
+const secretsPath = path.resolve(process.cwd(), 'secrets.env');
+if (fs.existsSync(secretsPath)) {
+  console.log('[Env] Loading secrets from secrets.env (with override)');
+  dotenv.config({ path: secretsPath, override: true });
+} else {
+  dotenv.config();
+}
+
+// Supabase Configuration - Use a helper to find the most likely valid key
+const getSupabaseKey = () => {
+  const anonKey = process.env.SUPABASE_ANON_KEY;
+  const serviceKey = process.env.SUPABASE_KEY;
+  
+  // Ignore keys that look like Edge Config IDs (starting with ecfg_)
+  if (serviceKey && !serviceKey.startsWith('ecfg_')) return serviceKey;
+  if (anonKey && !anonKey.startsWith('ecfg_')) return anonKey;
+  
+  return serviceKey || anonKey || '';
+};
+
 let supabaseUrl = process.env.SUPABASE_URL || '';
-let supabaseKey = process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || '';
+let supabaseKey = getSupabaseKey();
 let supabase: any = null;
 
 // Initialize Supabase
 async function initSupabase() {
+  console.log('[Supabase] Initializing...');
+  
   // If keys missing in env, try Edge Config as backup
   if (!supabaseUrl || !supabaseKey) {
     try {
@@ -31,10 +55,15 @@ async function initSupabase() {
   }
 
   if (supabaseUrl && supabaseKey) {
-    supabase = createClient(supabaseUrl, supabaseKey);
-    console.log('[Supabase] Client initialized successfully.');
+    try {
+      supabase = createClient(supabaseUrl, supabaseKey);
+      console.log('[Supabase] Client initialized successfully at:', supabaseUrl);
+    } catch (err) {
+      console.error('[Supabase] Client creation failed:', err);
+    }
   } else {
-    console.warn('[Supabase] No credentials found in ENV or Edge Config.');
+    console.warn('[Supabase] No credentials found in ENV, secrets.env, or Edge Config.');
+    console.log('[Supabase] Expected: SUPABASE_URL and SUPABASE_KEY/SUPABASE_ANON_KEY');
   }
 }
 
@@ -46,19 +75,44 @@ let isCctvActive = false;
 // Load state from Supabase
 async function loadInitialState() {
   if (!supabase) {
-    console.warn('Supabase credentials missing. Running in memory-only mode.');
+    console.warn('[Supabase] Credentials missing. Running in memory-only mode.');
     return;
   }
 
+  const REQUIRED_TABLES = ['reports', 'system_config'];
+  
   try {
+    console.log('[Supabase] Verification: checking tables...');
+    
     // 1. Load Reports
     const { data: reportsData, error: reportsError } = await supabase
       .from('reports')
       .select('*')
       .order('timestamp', { ascending: false });
 
-    if (reportsError) throw reportsError;
-    reports = reportsData || [];
+    if (reportsError) {
+      if (reportsError.code === 'PGRST116' || reportsError.message.includes('relation "public.reports" does not exist')) {
+        console.error('\n[SUPABASE ACTION REQUIRED] Table "reports" is missing.');
+        console.log('Run this SQL in your Supabase SQL Editor:');
+        console.log(`
+          CREATE TABLE reports (
+            id TEXT PRIMARY KEY,
+            reporterId TEXT,
+            dorm TEXT,
+            location TEXT,
+            type TEXT,
+            priority TEXT,
+            timestamp BIGINT,
+            status TEXT,
+            description TEXT
+          );
+        \n`);
+      } else {
+        throw reportsError;
+      }
+    } else {
+      reports = reportsData || [];
+    }
 
     // 2. Load System Config (CCTV state)
     const { data: configData, error: configError } = await supabase
@@ -67,14 +121,29 @@ async function loadInitialState() {
       .eq('key', 'isCctvActive')
       .single();
 
-    if (configError && configError.code !== 'PGRST116') {
-      console.warn('[Supabase] system_config table might be missing or inaccessible.');
+    if (configError) {
+      if (configError.code === 'PGRST116' || configError.message.includes('relation "public.system_config" does not exist')) {
+        console.error('\n[SUPABASE ACTION REQUIRED] Table "system_config" is missing.');
+        console.log('Run this SQL in your Supabase SQL Editor:');
+        console.log(`
+          CREATE TABLE system_config (
+            key TEXT PRIMARY KEY,
+            value JSONB
+          );
+          INSERT INTO system_config (key, value) VALUES ('isCctvActive', false);
+        \n`);
+      } else if (configError.code !== 'PGRST116') {
+         // PGRST116 is just "no rows found", which is fine
+         console.warn('[Supabase] system_config loading warning:', configError.message);
+      }
     }
+    
     if (configData) isCctvActive = configData.value;
     
-    console.log(`[Supabase] Initial state loaded successfully.`);
+    console.log(`[Supabase] Initialization check complete.`);
   } catch (err) {
-    console.error('[Supabase] Initial load failed. App will run in-memory until tables are created.', err);
+    console.error('[Supabase] Initial load encountered an unexpected error:', err);
+    console.log('[Supabase] App will continue with in-memory persistence only.');
   }
 }
 
@@ -127,25 +196,43 @@ async function startServer() {
 
   // API routes
   app.get('/api/supabase-status', async (req, res) => {
-    if (!supabase) {
-      return res.status(200).json({ status: 'missing_config', error: 'Credentials not found. Please add SUPABASE_URL and SUPABASE_KEY to Vercel Environment Variables.' });
+    const hasUrl = !!supabaseUrl;
+    const hasKey = !!supabaseKey;
+    const clientExists = !!supabase;
+
+    if (!clientExists) {
+      return res.status(200).json({ 
+        status: 'missing_config', 
+        error: 'Credentials not found.',
+        details: { hasUrl, hasKey, env: process.env.NODE_ENV }
+      });
     }
 
     try {
       // Test actual connection
-      const { error } = await supabase.from('reports').select('count', { count: 'exact', head: true });
+      const { data, error } = await supabase.from('reports').select('count', { count: 'exact', head: true });
       
       if (error) {
         return res.status(200).json({ 
           status: 'error', 
           error: error.message,
-          code: error.code 
+          code: error.code,
+          details: { hasUrl, hasKey, url: supabaseUrl.substring(0, 15) + '...' }
         });
       }
 
-      res.json({ status: 'connected', tables: ['reports', 'system_config'] });
+      res.json({ 
+        status: 'connected', 
+        tables: ['reports', 'system_config'],
+        counts: data,
+        url: supabaseUrl.substring(0, 15) + '...'
+      });
     } catch (err: any) {
-      res.status(200).json({ status: 'failing', error: err.message });
+      res.status(200).json({ 
+        status: 'failing', 
+        error: err.message,
+        details: { hasUrl, hasKey }
+      });
     }
   });
 

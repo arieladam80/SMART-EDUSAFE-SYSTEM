@@ -1,8 +1,8 @@
 import { io } from 'socket.io-client';
 
-// Configure socket with explicit websocket-only transport to bypass polling issues in proxies
+// Configure socket with polling fallback for better reliability in restricted environments
 export const socket = io({
-  transports: ['websocket'],
+  transports: ['websocket', 'polling'],
   autoConnect: true,
   reconnection: true,
   reconnectionAttempts: Infinity,
