@@ -174,7 +174,6 @@ async function startServer() {
     });
   });
 
-  // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -182,16 +181,35 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
+    // In production (Vercel/others), serve static files from dist
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+    
+    // Handlers for SPA routing
+    app.get('*', (req, res, next) => {
+      // Skip API and Socket.io routes
+      if (req.url.startsWith('/api') || req.url.startsWith('/socket.io')) {
+        return next();
+      }
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
-  httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
-  });
+  // Only listen if we're not running as a Vercel serverless function
+  if (process.env.VERCEL !== '1') {
+    httpServer.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server running on http://0.0.0.0:${PORT}`);
+    });
+  }
+
+  return app;
 }
 
-startServer();
+// Start the server
+const appPromise = startServer();
+
+// Export for Vercel
+export default async (req: any, res: any) => {
+  const app = await appPromise;
+  return app(req, res);
+};
