@@ -8,6 +8,7 @@ import { createClient } from '@supabase/supabase-js';
 import { get } from '@vercel/edge-config';
 import dotenv from 'dotenv';
 import fs from 'fs';
+import admin from 'firebase-admin';
 
 // Load environment variables
 const secretsPath = path.resolve(process.cwd(), 'secrets.env');
@@ -18,15 +19,49 @@ if (fs.existsSync(secretsPath)) {
   dotenv.config();
 }
 
-// Supabase Configuration - Use a helper to find the most likely valid key
+// --- Firebase Configuration ---
+let firestore: admin.firestore.Firestore | null = null;
+try {
+  const serviceAccountVar = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (serviceAccountVar) {
+    const serviceAccount = JSON.parse(serviceAccountVar);
+    if (!admin.apps.length) {
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount)
+      });
+    }
+    firestore = admin.firestore();
+    console.log('[Firebase] Admin SDK initialized successfully.');
+  } else {
+    // Try individual environment variables
+    const projectId = process.env.FIREBASE_PROJECT_ID;
+    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+    const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+
+    if (projectId && clientEmail && privateKey) {
+      if (!admin.apps.length) {
+        admin.initializeApp({
+          credential: admin.credential.cert({
+            projectId,
+            clientEmail,
+            privateKey,
+          })
+        });
+      }
+      firestore = admin.firestore();
+      console.log('[Firebase] Admin SDK initialized via individual env vars.');
+    }
+  }
+} catch (e) {
+  console.error('[Firebase] Initialization error:', e);
+}
+
+// --- Supabase Configuration ---
 const getSupabaseKey = () => {
   const anonKey = process.env.SUPABASE_ANON_KEY;
   const serviceKey = process.env.SUPABASE_KEY;
-  
-  // Ignore keys that look like Edge Config IDs (starting with ecfg_)
   if (serviceKey && !serviceKey.startsWith('ecfg_')) return serviceKey;
   if (anonKey && !anonKey.startsWith('ecfg_')) return anonKey;
-  
   return serviceKey || anonKey || '';
 };
 
@@ -34,18 +69,12 @@ let supabaseUrl = process.env.SUPABASE_URL || '';
 let supabaseKey = getSupabaseKey();
 let supabase: any = null;
 
-// Initialize Supabase
 async function initSupabase() {
-  console.log('[Supabase] Initializing...');
-  
-  // If keys missing in env, try Edge Config as backup
   if (!supabaseUrl || !supabaseKey) {
     try {
       if (process.env.EDGE_CONFIG) {
-        console.log('[Supabase] Missing env vars, checking Edge Config backup...');
         const configUrl = await get('SUPABASE_URL');
         const configKey = (await get('SUPABASE_KEY')) || (await get('SUPABASE_ANON_KEY'));
-        
         if (typeof configUrl === 'string') supabaseUrl = configUrl;
         if (typeof configKey === 'string') supabaseKey = configKey;
       }
@@ -57,204 +86,163 @@ async function initSupabase() {
   if (supabaseUrl && supabaseKey) {
     try {
       supabase = createClient(supabaseUrl, supabaseKey);
-      console.log('[Supabase] Client initialized successfully at:', supabaseUrl);
+      console.log('[Supabase] Client initialized.');
     } catch (err) {
       console.error('[Supabase] Client creation failed:', err);
     }
-  } else {
-    console.warn('[Supabase] No credentials found in ENV, secrets.env, or Edge Config.');
-    console.log('[Supabase] Expected: SUPABASE_URL and SUPABASE_KEY/SUPABASE_ANON_KEY');
   }
 }
 
-
-// Server-side state (Cache)
+// --- Unified Persistence Helpers ---
 let reports: any[] = [];
 let isCctvActive = false;
 
-// Load state from Supabase
 async function loadInitialState() {
-  if (!supabase) {
-    console.warn('[Supabase] Credentials missing. Running in memory-only mode.');
-    return;
+  // Prioritize Firebase if available
+  if (firestore) {
+    try {
+      console.log('[Firebase] Loading initial state...');
+      const reportsSnapshot = await firestore.collection('reports').orderBy('timestamp', 'desc').get();
+      reports = reportsSnapshot.docs.map(doc => doc.data());
+      
+      const configDoc = await firestore.collection('system').doc('cctv').get();
+      if (configDoc.exists) {
+        isCctvActive = configDoc.data()?.active || false;
+      }
+      console.log('[Firebase] Initial state loaded.');
+      return;
+    } catch (e) {
+      console.error('[Firebase] Initial load failure:', e);
+    }
   }
 
-  const REQUIRED_TABLES = ['reports', 'system_config'];
-  
-  try {
-    console.log('[Supabase] Verification: checking tables...');
-    
-    // 1. Load Reports
-    const { data: reportsData, error: reportsError } = await supabase
-      .from('reports')
-      .select('*')
-      .order('timestamp', { ascending: false });
+  // Fallback to Supabase
+  if (supabase) {
+    try {
+      console.log('[Supabase] Loading initial state...');
+      const { data: reportsData } = await supabase.from('reports').select('*').order('timestamp', { ascending: false });
+      if (reportsData) reports = reportsData;
 
-    if (reportsError) {
-      if (reportsError.code === 'PGRST116' || reportsError.message.includes('relation "public.reports" does not exist')) {
-        console.error('\n[SUPABASE ACTION REQUIRED] Table "reports" is missing.');
-        console.log('Run this SQL in your Supabase SQL Editor:');
-        console.log(`
-          CREATE TABLE reports (
-            id TEXT PRIMARY KEY,
-            reporterId TEXT,
-            dorm TEXT,
-            location TEXT,
-            type TEXT,
-            priority TEXT,
-            timestamp BIGINT,
-            status TEXT,
-            description TEXT
-          );
-        \n`);
-      } else {
-        throw reportsError;
-      }
-    } else {
-      reports = reportsData || [];
+      const { data: configData } = await supabase.from('system_config').select('value').eq('key', 'isCctvActive').single();
+      if (configData) isCctvActive = configData.value;
+      console.log('[Supabase] Initial state loaded.');
+    } catch (e) {
+      console.error('[Supabase] Initial load failure:', e);
     }
+  }
+}
 
-    // 2. Load System Config (CCTV state)
-    const { data: configData, error: configError } = await supabase
-      .from('system_config')
-      .select('value')
-      .eq('key', 'isCctvActive')
-      .single();
-
-    if (configError) {
-      if (configError.code === 'PGRST116' || configError.message.includes('relation "public.system_config" does not exist')) {
-        console.error('\n[SUPABASE ACTION REQUIRED] Table "system_config" is missing.');
-        console.log('Run this SQL in your Supabase SQL Editor:');
-        console.log(`
-          CREATE TABLE system_config (
-            key TEXT PRIMARY KEY,
-            value JSONB
-          );
-          INSERT INTO system_config (key, value) VALUES ('isCctvActive', false);
-        \n`);
-      } else if (configError.code !== 'PGRST116') {
-         // PGRST116 is just "no rows found", which is fine
-         console.warn('[Supabase] system_config loading warning:', configError.message);
-      }
+async function persistReport(report: any) {
+  if (firestore) {
+    try {
+      await firestore.collection('reports').doc(report.id).set(report);
+    } catch (e) {
+      console.error('[Firebase] Failed to persist report:', e);
     }
-    
-    if (configData) isCctvActive = configData.value;
-    
-    console.log(`[Supabase] Initialization check complete.`);
-  } catch (err) {
-    console.error('[Supabase] Initial load encountered an unexpected error:', err);
-    console.log('[Supabase] App will continue with in-memory persistence only.');
+  }
+  if (supabase) {
+    try {
+      await supabase.from('reports').upsert(report);
+    } catch (e) {
+      console.error('[Supabase] Failed to persist report:', e);
+    }
+  }
+}
+
+async function persistCctvState(active: boolean) {
+  if (firestore) {
+    try {
+      await firestore.collection('system').doc('cctv').set({ active, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    } catch (e) {
+      console.error('[Firebase] Failed to persist CCTV state:', e);
+    }
+  }
+  if (supabase) {
+    try {
+      await supabase.from('system_config').upsert({ key: 'isCctvActive', value: active });
+    } catch (e) {
+      console.error('[Supabase] Failed to persist CCTV state:', e);
+    }
+  }
+}
+
+async function clearAllReports() {
+  reports = [];
+  if (firestore) {
+    try {
+      const snapshot = await firestore.collection('reports').get();
+      const batch = firestore.batch();
+      snapshot.docs.forEach(doc => batch.delete(doc.ref));
+      await batch.commit();
+    } catch (e) {
+      console.error('[Firebase] Failed to clear reports:', e);
+    }
+  }
+  if (supabase) {
+    try {
+      await supabase.from('reports').delete().neq('id', 'DUMMY_NONE_MATCH');
+    } catch (e) {
+      console.error('[Supabase] Failed to clear reports:', e);
+    }
   }
 }
 
 async function startServer() {
-  // Initialize Supabase and fire initial load
   await initSupabase();
-  loadInitialState().catch(err => console.error('[Supabase] Initial load background failure:', err));
+  await loadInitialState().catch(err => console.error('[Storage] Initial load background failure:', err));
 
   const app = express();
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
     cors: { origin: "*", methods: ["GET", "POST"] },
     transports: ['websocket', 'polling'],
-    allowEIO3: true,
-    maxHttpBufferSize: 1e8,
-    pingTimeout: 120000,
-    pingInterval: 30000
   });
 
   const PORT = Number(process.env.PORT) || 3000;
 
-  app.use((req, res, next) => {
-    if (req.url.startsWith('/socket.io')) {
-      console.log(`[Socket.io Request] ${req.method} ${req.url}`);
-    }
-    next();
-  });
-
   app.use(cors({ origin: "*", methods: ["GET", "POST"] }));
   app.use(express.json({ limit: '100mb' }));
 
-  // API Persistence Helpers
-  const persistReport = async (report: any) => {
-    if (!supabase) return;
-    try {
-      await supabase.from('reports').upsert(report);
-    } catch (e) {
-      console.error('[Supabase] Failed to persist report:', e);
-    }
-  };
-
-  const persistCctvState = async (active: boolean) => {
-    if (!supabase) return;
-    try {
-      await supabase.from('system_config').upsert({ key: 'isCctvActive', value: active });
-    } catch (e) {
-      console.error('[Supabase] Failed to persist CCTV state:', e);
-    }
-  };
-
-  // API routes
-  app.get('/api/supabase-status', async (req, res) => {
-    const hasUrl = !!supabaseUrl;
-    const hasKey = !!supabaseKey;
-    const clientExists = !!supabase;
-
-    if (!clientExists) {
-      return res.status(200).json({ 
-        status: 'missing_config', 
-        error: 'Credentials not found.',
-        details: { hasUrl, hasKey, env: process.env.NODE_ENV }
-      });
-    }
-
-    try {
-      // Test actual connection
-      const { data, error } = await supabase.from('reports').select('count', { count: 'exact', head: true });
-      
-      if (error) {
-        return res.status(200).json({ 
-          status: 'error', 
-          error: error.message,
-          code: error.code,
-          details: { hasUrl, hasKey, url: supabaseUrl.substring(0, 15) + '...' }
-        });
+  // API Status
+  app.get('/api/db-status', async (req, res) => {
+    const status: any = {
+      firebase: firestore ? 'connected' : 'disconnected',
+      supabase: supabase ? 'initialized' : 'missing_config',
+    };
+    
+    if (firestore) {
+      try {
+        await firestore.collection('reports').limit(1).get();
+        status.firebase = 'active';
+      } catch (e: any) {
+        status.firebase = 'error: ' + e.message;
       }
-
-      res.json({ 
-        status: 'connected', 
-        tables: ['reports', 'system_config'],
-        counts: data,
-        url: supabaseUrl.substring(0, 15) + '...'
-      });
-    } catch (err: any) {
-      res.status(200).json({ 
-        status: 'failing', 
-        error: err.message,
-        details: { hasUrl, hasKey }
-      });
     }
+
+    if (supabase) {
+      try {
+        const { error } = await supabase.from('reports').select('count', { count: 'exact', head: true });
+        status.supabase = error ? 'error: ' + error.message : 'active';
+      } catch (e: any) {
+        status.supabase = 'error: ' + e.message;
+      }
+    }
+
+    res.json(status);
   });
 
-  app.get('/api/reports', (req, res) => {
-    res.json(reports);
-  });
-
-  app.get('/api/cctv', (req, res) => {
-    res.json({ isCctvActive });
-  });
+  app.get('/api/reports', (req, res) => res.json(reports));
+  app.get('/api/cctv', (req, res) => res.json({ isCctvActive }));
 
   app.post('/api/reports', async (req, res) => {
     const report = req.body;
     if (reports.some(r => r.id === report.id)) return res.json(report);
-
     reports = [report, ...reports];
     await persistReport(report);
     io.emit('report_added', report);
     res.status(201).json(report);
   });
 
-  // Socket.io logic
   io.on('connection', (socket) => {
     socket.emit('init', { reports, isCctvActive });
 
@@ -279,52 +267,30 @@ async function startServer() {
     });
 
     socket.on('clear_reports', async () => {
-      reports = [];
-      if (supabase) {
-        await supabase.from('reports').delete().neq('id', 'DUMMY_NONE_MATCH');
-      }
+      await clearAllReports();
       io.emit('reports_cleared');
-    });
-    socket.on('disconnect', () => {
-      console.log('User disconnected:', socket.id);
     });
   });
 
   if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
+    const vite = await createViteServer({ server: { middlewareMode: true }, appType: 'spa' });
     app.use(vite.middlewares);
   } else {
-    // In production (Vercel/others), serve static files from dist
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    
-    // Handlers for SPA routing
     app.get('*', (req, res, next) => {
-      // Skip API and Socket.io routes
-      if (req.url.startsWith('/api') || req.url.startsWith('/socket.io')) {
-        return next();
-      }
+      if (req.url.startsWith('/api') || req.url.startsWith('/socket.io')) return next();
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
-  // Only listen if we're not running as a Vercel serverless function
   if (process.env.VERCEL !== '1') {
-    httpServer.listen(PORT, '0.0.0.0', () => {
-      console.log(`Server running on http://0.0.0.0:${PORT}`);
-    });
+    httpServer.listen(PORT, '0.0.0.0', () => console.log(`Server running on http://0.0.0.0:${PORT}`));
   }
-
   return app;
 }
 
-// Start the server
 const appPromise = startServer();
-
-// Export for Vercel
 export default async (req: any, res: any) => {
   const app = await appPromise;
   return app(req, res);

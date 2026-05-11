@@ -20,7 +20,7 @@ export const useSmartEduSafe = () => {
     try {
       const reportsRes = await fetch('/api/reports').catch(() => null);
       const cctvRes = await fetch('/api/cctv').catch(() => null);
-      const dbRes = await fetch('/api/supabase-status').catch(() => null);
+      const dbRes = await fetch('/api/db-status').catch(() => null);
 
       if (reportsRes && reportsRes.ok) {
         const data: Report[] = await reportsRes.json();

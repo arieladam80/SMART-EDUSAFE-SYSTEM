@@ -8,7 +8,7 @@ import { socket } from '../lib/socket';
 interface WardenProps {
   user: User;
   reports: Report[];
-  dbStatus: { status: string; error?: string };
+  dbStatus: any;
   onMarkReviewed: (id: string) => void;
   onClearReports: () => void;
   onLogout: () => void;
@@ -326,24 +326,37 @@ export const WardenDashboard = ({ user, reports, dbStatus, onMarkReviewed, onCle
         </nav>
 
         <div className="pt-8 border-t border-white/5 space-y-4">
-          <div className="bg-white/5 rounded-2xl p-4 border border-white/5">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-[10px] font-mono text-white/30 uppercase tracking-widest font-bold">Persistence</span>
-              <div className={`w-2 h-2 rounded-full ${
-                dbStatus.status === 'connected' ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' : 
-                dbStatus.status === 'checking' ? 'bg-amber-500 animate-pulse' : 'bg-red-500'
-              }`} />
+          <div className="bg-white/5 rounded-2xl p-4 border border-white/5 space-y-4">
+             <div className="flex items-center justify-between">
+              <span className="text-[10px] font-mono text-white/30 uppercase tracking-widest font-bold">Persistence Layer</span>
             </div>
+
+            {/* Firebase Status */}
             <div className="flex items-center gap-3">
               <div className="p-2 bg-white/5 rounded-lg border border-white/5">
-                <Shield className={`w-4 h-4 ${dbStatus.status === 'connected' ? 'text-green-500' : 'text-white/20'}`} />
+                <Shield className={`w-4 h-4 ${dbStatus.firebase === 'active' ? 'text-green-500' : 'text-white/20'}`} />
               </div>
-              <div className="flex flex-col">
-                <span className="text-xs font-bold text-white/80">Supabase DB</span>
-                <span className={`text-[9px] font-mono uppercase tracking-tight ${
-                  dbStatus.status === 'connected' ? 'text-green-500/80' : 'text-red-400'
+              <div className="flex flex-col min-w-0">
+                <span className="text-xs font-bold text-white/80">Firestore (Main)</span>
+                <span className={`text-[9px] font-mono uppercase tracking-tight truncate ${
+                  dbStatus.firebase === 'active' ? 'text-green-500/80' : 'text-red-400'
                 }`}>
-                  {dbStatus.status === 'connected' ? 'Ready & Synced' : dbStatus.error || 'Connection Failed'}
+                  {dbStatus.firebase === 'active' ? 'Connected' : dbStatus.firebase === 'disconnected' ? 'Offline' : 'Config Error'}
+                </span>
+              </div>
+            </div>
+
+            {/* Supabase Status */}
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-white/5 rounded-lg border border-white/5">
+                <Activity className={`w-4 h-4 ${dbStatus.supabase === 'active' ? 'text-blue-500' : 'text-white/20'}`} />
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-xs font-bold text-white/80">Supabase (Backup)</span>
+                <span className={`text-[9px] font-mono uppercase tracking-tight truncate ${
+                  dbStatus.supabase === 'active' ? 'text-blue-500/80' : 'text-amber-400'
+                }`}>
+                  {dbStatus.supabase === 'active' ? 'Synced' : dbStatus.supabase || 'Not Ready'}
                 </span>
               </div>
             </div>
