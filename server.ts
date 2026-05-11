@@ -8,8 +8,13 @@ import { createClient } from '@supabase/supabase-js';
 
 // Supabase Configuration
 const supabaseUrl = process.env.SUPABASE_URL || '';
-const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabaseKey = process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || '';
+
+// Create client only if credentials exist, otherwise use a proxy to avoid crashes
+const supabase = (supabaseUrl && supabaseKey) 
+  ? createClient(supabaseUrl, supabaseKey)
+  : null;
+
 
 // Server-side state (Cache)
 let reports: any[] = [];
@@ -17,7 +22,7 @@ let isCctvActive = false;
 
 // Load state from Supabase
 async function loadInitialState() {
-  if (!supabaseUrl || !supabaseKey) {
+  if (!supabase) {
     console.warn('Supabase credentials missing. Running in memory-only mode.');
     return;
   }
@@ -79,7 +84,7 @@ async function startServer() {
 
   // API Persistence Helpers
   const persistReport = async (report: any) => {
-    if (!supabaseUrl || !supabaseKey) return;
+    if (!supabase) return;
     try {
       await supabase.from('reports').upsert(report);
     } catch (e) {
@@ -88,7 +93,7 @@ async function startServer() {
   };
 
   const persistCctvState = async (active: boolean) => {
-    if (!supabaseUrl || !supabaseKey) return;
+    if (!supabase) return;
     try {
       await supabase.from('system_config').upsert({ key: 'isCctvActive', value: active });
     } catch (e) {
@@ -98,12 +103,12 @@ async function startServer() {
 
   // API routes
   app.get('/api/supabase-status', async (req, res) => {
-    if (!supabaseUrl || !supabaseKey) {
-      return res.status(200).json({ status: 'missing_config', error: 'Credentials not provided' });
+    if (!supabase) {
+      return res.status(200).json({ status: 'missing_config', error: 'Credentials not found. Please add SUPABASE_URL and SUPABASE_KEY to Vercel Environment Variables.' });
     }
 
     try {
-      // Test actual connection by reaching out to Supabase
+      // Test actual connection
       const { error } = await supabase.from('reports').select('count', { count: 'exact', head: true });
       
       if (error) {
@@ -164,7 +169,7 @@ async function startServer() {
 
     socket.on('clear_reports', async () => {
       reports = [];
-      if (supabaseUrl && supabaseKey) {
+      if (supabase) {
         await supabase.from('reports').delete().neq('id', 'DUMMY_NONE_MATCH');
       }
       io.emit('reports_cleared');
