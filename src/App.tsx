@@ -6,6 +6,7 @@
 import { LoginView, useSmartEduSafe } from './components/AsramaContext';
 import { StudentDashboard } from './components/StudentDashboard';
 import { WardenDashboard } from './components/WardenDashboard';
+import { SuperAdminDashboard } from './components/SuperAdminDashboard';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function App() {
@@ -42,7 +43,9 @@ export default function App() {
             exit={{ opacity: 0 }}
             className="w-full"
           >
-            {user.role === 'student' ? (
+            {user.role === 'superadmin' ? (
+              <SuperAdminDashboard onLogout={logout} />
+            ) : user.role === 'student' ? (
               <div className="min-h-screen bg-slate-50">
                  <header className="bg-white border-b border-slate-200 p-4 sticky top-0 z-30">
                    <div className="max-w-4xl mx-auto flex justify-between items-center">

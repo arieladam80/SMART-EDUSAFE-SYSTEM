@@ -101,73 +101,99 @@ async function initSupabase() {
 // --- Unified Persistence Helpers ---
 let reports: any[] = [];
 let isCctvActive = false;
+let systemLogs: { timestamp: number; level: 'info' | 'error' | 'warn'; message: string; source: string }[] = [];
+let authorizedUsers: { id: string; role: 'student' | 'warden'; password?: string }[] = [
+  { id: 'S2024-001', role: 'student' },
+  { id: 'S2024-002', role: 'student' },
+  { id: 'S2024-003', role: 'student' },
+  { id: 'BIO-STUDENT-01', role: 'student' },
+  { id: 'warden@asrama.edu', role: 'warden', password: 'admin123' }
+];
+let featureFlags = {
+  hybridSync: true,
+  cctvFailover: true,
+  pushNotifications: false,
+  aiSentiment: false
+};
+
+function addLog(level: 'info' | 'error' | 'warn', message: string, source: string) {
+  systemLogs.unshift({ timestamp: Date.now(), level, message, source });
+  if (systemLogs.length > 50) systemLogs.pop();
+  console[level](`[${source}] ${message}`);
+}
 
 async function loadInitialState() {
+  addLog('info', 'Starting initial state load...', 'Storage');
   // Prioritize Firebase if available
   if (firestore) {
     try {
-      console.log('[Firebase] Loading initial state...');
+      addLog('info', 'Attempting to load from Firebase...', 'Firebase');
       const reportsSnapshot = await firestore.collection('reports').orderBy('timestamp', 'desc').get();
       reports = reportsSnapshot.docs.map(doc => doc.data());
       
-      const configDoc = await firestore.collection('system').doc('cctv').get();
+      const configDoc = await firestore.collection('system').doc('config').get();
       if (configDoc.exists) {
-        isCctvActive = configDoc.data()?.active || false;
+        const data = configDoc.data();
+        if (data?.featureFlags) featureFlags = { ...featureFlags, ...data.featureFlags };
+        if (data?.isCctvActive !== undefined) isCctvActive = data.isCctvActive;
       }
-      console.log('[Firebase] Initial state loaded.');
+
+      const usersSnapshot = await firestore.collection('users').get();
+      if (!usersSnapshot.empty) {
+        authorizedUsers = usersSnapshot.docs.map(doc => doc.data() as any);
+      }
+      
+      addLog('info', `Successfully loaded data from Firebase.`, 'Firebase');
       return;
-    } catch (e) {
-      console.error('[Firebase] Initial load failure:', e);
+    } catch (e: any) {
+      addLog('error', `Initial load failure: ${e.message}`, 'Firebase');
     }
   }
 
   // Fallback to Supabase
   if (supabase) {
     try {
-      console.log('[Supabase] Loading initial state...');
+      addLog('info', 'Attempting to load from Supabase...', 'Supabase');
       const { data: reportsData } = await supabase.from('reports').select('*').order('timestamp', { ascending: false });
       if (reportsData) reports = reportsData;
 
-      const { data: configData } = await supabase.from('system_config').select('value').eq('key', 'isCctvActive').single();
-      if (configData) isCctvActive = configData.value;
-      console.log('[Supabase] Initial state loaded.');
-    } catch (e) {
-      console.error('[Supabase] Initial load failure:', e);
+      const { data: configData } = await supabase.from('system_config').select('value').eq('key', 'system_config').single();
+      if (configData) {
+        if (configData.value.featureFlags) featureFlags = configData.value.featureFlags;
+        if (configData.value.isCctvActive !== undefined) isCctvActive = configData.value.isCctvActive;
+      }
+      addLog('info', `Successfully loaded reports from Supabase.`, 'Supabase');
+    } catch (e: any) {
+      addLog('error', `Initial load failure: ${e.message}`, 'Supabase');
     }
   }
 }
 
 async function persistReport(report: any) {
+  if (firestore) try { await firestore.collection('reports').doc(report.id).set(report); } catch (e) {}
+  if (supabase) try { await supabase.from('reports').upsert(report); } catch (e) {}
+}
+
+async function persistSystemConfig() {
+  const config = { featureFlags, isCctvActive, updatedAt: Date.now() };
   if (firestore) {
-    try {
-      await firestore.collection('reports').doc(report.id).set(report);
-    } catch (e) {
-      console.error('[Firebase] Failed to persist report:', e);
-    }
+    try { await firestore.collection('system').doc('config').set(config, { merge: true }); } catch (e) {}
   }
   if (supabase) {
-    try {
-      await supabase.from('reports').upsert(report);
-    } catch (e) {
-      console.error('[Supabase] Failed to persist report:', e);
-    }
+    try { await supabase.from('system_config').upsert({ key: 'system_config', value: config }); } catch (e) {}
   }
 }
 
-async function persistCctvState(active: boolean) {
+async function persistUser(user: any) {
   if (firestore) {
-    try {
-      await firestore.collection('system').doc('cctv').set({ active, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
-    } catch (e) {
-      console.error('[Firebase] Failed to persist CCTV state:', e);
-    }
+    try { await firestore.collection('users').doc(user.id).set(user); } catch (e) {}
   }
-  if (supabase) {
-    try {
-      await supabase.from('system_config').upsert({ key: 'isCctvActive', value: active });
-    } catch (e) {
-      console.error('[Supabase] Failed to persist CCTV state:', e);
-    }
+}
+
+async function deleteUser(userId: string) {
+  authorizedUsers = authorizedUsers.filter(u => u.id !== userId);
+  if (firestore) {
+    try { await firestore.collection('users').doc(userId).delete(); } catch (e) {}
   }
 }
 
@@ -238,6 +264,33 @@ async function startServer() {
 
   app.get('/api/reports', (req, res) => res.json(reports));
   app.get('/api/cctv', (req, res) => res.json({ isCctvActive }));
+  app.get('/api/system/logs', (req, res) => res.json(systemLogs));
+  app.get('/api/system/config', (req, res) => res.json({ featureFlags, isCctvActive }));
+  app.get('/api/users', (req, res) => res.json(authorizedUsers));
+
+  app.post('/api/system/config', async (req, res) => {
+    const { featureFlags: newFlags, isCctvActive: newCctv } = req.body;
+    if (newFlags) featureFlags = { ...featureFlags, ...newFlags };
+    if (newCctv !== undefined) isCctvActive = newCctv;
+    await persistSystemConfig();
+    addLog('info', 'System configuration updated by Admin', 'Admin');
+    res.json({ success: true });
+  });
+
+  app.post('/api/users', async (req, res) => {
+    const newUser = req.body;
+    authorizedUsers.push(newUser);
+    await persistUser(newUser);
+    addLog('info', `New ${newUser.role} added: ${newUser.id}`, 'Admin');
+    res.json({ success: true });
+  });
+
+  app.delete('/api/users/:id', async (req, res) => {
+    const { id } = req.params;
+    await deleteUser(id);
+    addLog('warn', `User removed: ${id}`, 'Admin');
+    res.json({ success: true });
+  });
 
   app.post('/api/reports', async (req, res) => {
     const report = req.body;
@@ -267,7 +320,7 @@ async function startServer() {
 
     socket.on('toggle_cctv', async () => {
       isCctvActive = !isCctvActive;
-      await persistCctvState(isCctvActive);
+      await persistSystemConfig();
       io.emit('cctv_toggled', isCctvActive);
     });
 
